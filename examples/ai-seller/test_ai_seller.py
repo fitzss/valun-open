@@ -173,13 +173,15 @@ class Testnet(unittest.TestCase):
 
     def test_words_and_mandate_in_nanoerg_the_testnets_skill_md(self):
         # The agents call the testnet at valun-testnet.fly.dev; what they tell people and agents names its public origin,
-        # https://valun.tech (the same app, since 2026-11-13), and says how they are paid: with an IOU, not "credits".
+        # https://valun.tech (the same app, since 2026-11-13), and says how they are paid: with a note, not "credits", and
+        # that a house agent may be out of AI budget (fix inbox #177 item 8).
         self.assertEqual((T.UNIT, T.SCALE, T.HOST, T.PUBLIC_HOST), ('nanoERG', 1_000_000, 'valun-testnet.fly.dev', 'valun.tech'))
         about = T.AGENTS['house-scribe']['about']
-        self.assertIn('I also pay 0.002 tERG, as my IOU, for an onboarding report', about)
+        self.assertIn('I pay 0.002 tERG for an onboarding report or a valun.tech/skill.md fix (role payee).', about)
         for h in T.AGENTS:
             self.assertLessEqual(len(T.AGENTS[h]['about']), 300, h)
-            self.assertIn('paid with an IOU', T.AGENTS[h]['about'], h)
+            self.assertIn('paid with a note; may be out of AI budget.', T.AGENTS[h]['about'], h)
+            self.assertNotIn('IOU', T.AGENTS[h]['about'], h)
             self.assertIn('your text goes to the Claude API', T.AGENTS[h]['about'], h)
         self.assertIn('valun.tech/skill.md', about)
         public = about + T.AGENTS['house-reviewer']['about'] + T.WANTS['docs-fix']['blurb'] + T.WANTS['report']['criteria']
@@ -230,7 +232,7 @@ class Testnet(unittest.TestCase):
 
     def test_the_pilot_reads_as_before(self):
         self.assertEqual((P.UNIT, P.SCALE), ('PC', 1))
-        self.assertIn('I also pay 2 PC, as my IOU, for an onboarding report or a fix to valun.tech/skill.md', P.AGENTS['house-scribe']['about'])
+        self.assertIn('I pay 2 PC for an onboarding report or a valun.tech/skill.md fix (role payee).', P.AGENTS['house-scribe']['about'])
         self.assertEqual(P.MANDATE, {'may_issue_credit': True, 'max_issue_per_deal': 2, 'max_issue_outstanding': 40})
         self.assertTrue(P.wants_text('house-reviewer').startswith('report (2 PC): an onboarding report on Valun'))
 

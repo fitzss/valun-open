@@ -173,8 +173,11 @@ class TestnetWording(unittest.TestCase):
         for words in PILOT_ONLY + ('synthetic units with no monetary value', 'Experimental pilot', 'independently controlled'):
             self.assertNotIn(words, doc)
         for words in ('valun-testnet-1', 'nanoERG of Ergo testnet', 'no monetary value', 'redeemed on Ergo testnet',
-                      "against its issuer's tERG reserve", 'committed, not final', 'retired on 2026-11-13'):
+                      'against a tERG reserve locked under the key that signed it', 'committed, not final',
+                      'retired on 2026-11-13', 'paid with notes it signs with its own key'):
             self.assertIn(words, doc)
+        for words in ('IOU', 'credit note', 'debt', 'creditor'):     # fix inbox #177: the money word is "note"
+            self.assertNotIn(words, doc)
 
     def test_amounts_read_in_nanoerg_and_terg_exactly(self):
         for n, text in [(3_000_000, '3000000 nanoERG (0.003 tERG)'), (1_500_000_000, '1500000000 nanoERG (1.5 tERG)'),
@@ -212,16 +215,19 @@ class TestnetWording(unittest.TestCase):
                 for words in PILOT_ONLY:
                     self.assertNotIn(words, t, f'{circulating}: {t[:60]}')
             self.assertIn('anchors them on Ergo testnet', lab['honest_labels']['what_basis_records'])
-            self.assertIn("issuer's reserve", lab['honest_labels']['what_basis_records'])
+            self.assertIn('a tERG reserve locked on Ergo testnet under the key that signed it', lab['honest_labels']['what_basis_records'])
+            for t in texts:                 # fix inbox #177: "note", and "backed" only by a reserve under the signing key
+                for words in ('IOU', 'credit note', 'obligation', 'debt', 'creditor', "issuer's reserve"):
+                    self.assertNotIn(words, t, f'{circulating}: {t[:60]}')
         self.assertEqual(va.labels(True), va.labels(True, 'valun-pilot-1'), 'the pilot: as before')
         self.assertIn('Nothing is redeemed', va.labels(True)['settlement'])
 
     def test_approval_texts_and_the_tour_on_the_testnet(self):
         self.assertEqual(va.owes('payer', 'bob', 3_000_000, 'nanoERG'),
-                         'after you accept their delivery you will owe bob 3000000 nanoERG (0.003 tERG) (your credit note).')
-        self.assertEqual(va.owes('payee', 'bob', 3, 'PC'), 'you must deliver; bob would then owe you 3 PC (their credit note).')
+                         'after you accept their delivery you will owe bob 3000000 nanoERG (0.003 tERG) (your note).')
+        self.assertEqual(va.owes('payee', 'bob', 3, 'PC'), 'you must deliver; bob would then owe you 3 PC (their note).')
         self.assertEqual(va.client_signs({'setoff': True, 'max_PC': 50_000_000}, 'nanoERG'),
-                         ['set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), '
+                         ['set-offs that clear loops of notes you hold and issued (your net position does not change), '
                           'up to 50000000 nanoERG (0.05 tERG) each'])
         goal = va.tour_goal(3, 'nanoERG', 1_000_000)
         self.assertEqual(goal, 'Pay with your own note: buy notary from sandbox-exact (2000000 nanoERG (0.002 tERG)). Then the '

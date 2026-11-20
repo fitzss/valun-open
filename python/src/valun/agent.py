@@ -91,58 +91,71 @@ REAL_VS_SIMULATED_CIRCULATION = {
     'not_proven': REAL_VS_SIMULATED['not_proven'],
 }
 # The same labels on the Valun testnet network (valun-testnet-1): word for word the server's testnet deal labels
-# (lib/pilot/core.mjs SETTLEMENT_TESTNET, CIRCULATION_SETTLEMENT_TESTNET). There a creditor can redeem a note on Ergo
-# testnet against its issuer's reserve, the tracker anchors its totals on Ergo testnet, and tERG have no monetary value.
-# A netting is committed by the next tracker box, not final: it stays committed only as long as the tracker key never
-# commits an earlier total again (valun-app e18eb73, the server's label since Nov 16; fix inbox #85, #100, #136 item 7;
-# skill.md, Trust model).
+# (lib/pilot/core.mjs SETTLEMENT_TESTNET, CIRCULATION_SETTLEMENT_TESTNET, TESTNET_REDEMPTION; "note" since valun-app
+# 37693d5, fix inbox #173, and in the client since 0.7.3, #177). There a holder can redeem a note on Ergo testnet only
+# against a tERG reserve locked under the key that signed it, the tracker commits its totals on Ergo testnet, and tERG
+# have no monetary value. A netting is committed by the next tracker box, not final: it stays committed only as long as
+# the tracker key never commits an earlier total again (valun-app e18eb73, the server's label since Nov 16; fix inbox
+# #85, #100, #136 item 7; skill.md, Trust model). The pilot's labels above keep their words: the server's own pilot labels
+# still say them, and a local server runs the pilot network.
 TESTNET = 'valun-testnet-1'
-TESTNET_REDEMPTION = ("Its creditor can redeem it on Ergo testnet against the issuer's tERG reserve, if the issuer posted "
-                      'one; tERG are test coins with no monetary value.')
-SETTLEMENT_TESTNET = 'not settled until redeemed: issuing a credit note creates an outstanding obligation. ' + TESTNET_REDEMPTION
-CIRCULATION_SETTLEMENT_TESTNET = ('not settled until redeemed: a credit note is an outstanding obligation. With circulating '
-                                  'credit it can move to a new creditor (debt transfer, signed by the debtor and both '
-                                  'creditors) or be cancelled against an equal opposite obligation (set-off, signed by every '
-                                  'party; no net position changes); a netting is committed once a tracker box on Ergo '
-                                  'testnet commits it, and stays committed only as long as the tracker key never commits '
-                                  'an earlier total again. ' + TESTNET_REDEMPTION)
+TESTNET_REDEMPTION = ('Its holder can redeem it on Ergo testnet against a tERG reserve locked under the key that signed it, '
+                      'if one was posted; tERG are test coins with no monetary value.')
+SETTLEMENT_TESTNET = 'not settled until redeemed: issuing a note creates a promise to pay that stays outstanding. ' + TESTNET_REDEMPTION
+CIRCULATION_SETTLEMENT_TESTNET = ('not settled until redeemed: a note is a promise to pay that stays outstanding. With '
+                                  'circulating credit it can move to a new holder (a transfer, signed by its issuer and both '
+                                  'holders) or be cleared in a loop of notes (set-off, signed by every party; no net position '
+                                  'changes); a netting is committed once a tracker box on Ergo testnet commits it, and stays '
+                                  'committed only as long as the tracker key never commits an earlier total again. '
+                                  + TESTNET_REDEMPTION)
 _TESTNET_TRACKER = ('The Valun testnet Basis tracker keeps one running total per key pair: what the issuer key owes the '
                     'recipient key, with a timestamp, signed by the issuer, and anchors them on Ergo testnet (a tracker box '
                     'commits the digest of every total). ')
-_TESTNET_BACKING = "A note is backed only by its issuer's reserve on Ergo testnet, if the issuer posted one."
+_TESTNET_BACKING = ('A note is backed only by a tERG reserve locked on Ergo testnet under the key that signed it, if one was '
+                    'posted, and only up to what that reserve holds; most notes have none.')
+THIRD_PARTY_TESTNET = ('Supported: paying a third party with your OWN note; the third party may require that your claims on '
+                       'the tracker cover it (min_payer_coverage_pct). Not supported: transferring, assigning or endorsing '
+                       'a note you hold to someone else, and clearing or netting between participants.')
+PAY_THIRD_PARTY_TESTNET = ('Supported: paying a third party with your OWN note, or with a note you hold (pay_with: that much '
+                           'of what its issuer owes you moves to the payee; the issuer, you and the payee each sign, and what '
+                           'the issuer owes in all does not change), and set-offs that clear a loop of notes (every party '
+                           'signs; no net position changes). A payee may require that the claims of whoever issued the note '
+                           'it receives cover it (min_payer_coverage_pct). ')
 HONEST_LABELS_TESTNET = {
-    'what_basis_records': _TESTNET_TRACKER + 'A credit note raises a total. ' + _TESTNET_BACKING,
+    'what_basis_records': _TESTNET_TRACKER + 'A note raises a total. ' + _TESTNET_BACKING,
     'outstanding_promise': SETTLEMENT_TESTNET,
-    'third_party': HONEST_LABELS['third_party'],
+    'third_party': THIRD_PARTY_TESTNET,
 }
 HONEST_LABELS_CIRCULATION_TESTNET = {
-    'what_basis_records': (_TESTNET_TRACKER + 'A credit note raises a total; with circulating credit a debt transfer moves '
-                           'part of it to a new creditor and a set-off lowers the totals around a cycle, each signed by every '
-                           'party whose total changes. ' + _TESTNET_BACKING),
+    'what_basis_records': (_TESTNET_TRACKER + 'A note raises a total; with circulating credit a transfer moves part of it to '
+                           'a new holder and a set-off lowers the totals around a loop of notes, each signed by every party '
+                           'whose total changes. ' + _TESTNET_BACKING),
     'outstanding_promise': CIRCULATION_SETTLEMENT_TESTNET,
-    'third_party': PAY_THIRD_PARTY_CIRCULATION + "A creditor redeems a note only against its issuer's reserve on Ergo testnet, in tERG.",
+    'third_party': (PAY_THIRD_PARTY_TESTNET + 'A holder redeems a note only against a tERG reserve locked on Ergo testnet '
+                    'under the key that signed it.'),
 }
 REAL_VS_SIMULATED_TESTNET = {
-    'real': ("signatures by each participant's own key; Valun's acceptance and approval records; credit notes held by a "
-             'real Basis tracker (read back and reconciled by Valun) and anchored on Ergo testnet; reserves and '
-             'redemptions are Ergo testnet transactions'),
+    'real': ("signatures by each participant's own key; Valun's acceptance and approval records; notes held by a real "
+             'Basis tracker (read back and reconciled by Valun) and committed on Ergo testnet by its tracker boxes '
+             '(committed, not final); reserves and redemptions are Ergo testnet transactions'),
     'simulated': 'the value: tERG are Ergo testnet coins with no monetary value',
     'not_proven': ('that delivered work is good (Valun records statements, it does not judge work); that any participant '
-                   'will honour a credit note beyond its reserve'),
+                   'will pay a note beyond the reserve locked under the key that signed it'),
 }
 REAL_VS_SIMULATED_CIRCULATION_TESTNET = {
-    'real': ("signatures by each participant's own key; Valun's acceptance and approval records; credit notes, debt "
-             'transfers and set-offs held by a real Basis tracker (read back and reconciled by Valun, and checked by your '
-             'client against the signatures) and anchored on Ergo testnet; reserves and redemptions are Ergo testnet '
-             'transactions'),
+    'real': ("signatures by each participant's own key; Valun's acceptance and approval records; notes, transfers and "
+             'set-offs held by a real Basis tracker (read back and reconciled by Valun, and checked by your client against '
+             'the signatures) and committed on Ergo testnet by its tracker boxes (committed, not final); reserves and '
+             'redemptions are Ergo testnet transactions'),
     'simulated': REAL_VS_SIMULATED_TESTNET['simulated'],
     'not_proven': REAL_VS_SIMULATED_TESTNET['not_proven'],
 }
 # What a unit is, after its name (valun_status unit), and the last words of how to read the money view.
 UNIT_WORDS = {'PC': ' (pilot credits, no monetary value)', 'nanoERG': ' (of tERG: Ergo testnet coins with no monetary value)'}
 VALUE_WORDS = {'PC': 'Nothing is redeemed and PC have no value.',
-               'nanoERG': "A creditor can redeem a note on Ergo testnet against its issuer's reserve, if it has one; tERG "
-                          'have no monetary value.'}
+               'nanoERG': ('A note is settled only when its holder redeems it on Ergo testnet against a tERG reserve '
+                           'locked under the key that signed it, if one was posted (GET /reserves); tERG have no monetary '
+                           'value.')}
 CIRCULATION = 'circulation/1'
 CONSENTS_EVERY_MS = 60_000      # process_consents() runs at most this often (state consents_last_run_ms; design 6.6)
 # The local consent policy a join writes (design 6.6, 8): an invited participant's client signs set-offs and transfers of
@@ -189,9 +202,9 @@ SANDBOX_EXACT, SANDBOX_MALLORY = 'sandbox-exact', 'sandbox-mallory'
 SANDBOX_AGENTS = (SANDBOX_EXACT, SANDBOX_MALLORY)
 TOUR_GOALS = {
     1: 'Earn: sandbox-exact buys text-stats from you (the welcome job, 3 PC). Deliver the exact result; it pays with its '
-       'own credit note.',
+       'own note.',
     2: 'Spend a note you hold: buy notary from sandbox-mallory (2 PC) and pay with pay_with="sandbox-exact" (2 PC of '
-       "sandbox-exact's debt to you move to sandbox-mallory). Dispute a wrong delivery and buy again.",
+       'what sandbox-exact owes you moves to sandbox-mallory). Dispute a wrong delivery and buy again.',
     3: 'Pay with your own note: buy notary from sandbox-exact (2 PC). Then the 2-cycle you -> sandbox-exact -> you (1 PC) '
        'is cleared by a set-off your Valun client signs by itself.',
     4: 'Sell: offer text-stats to sandbox-mallory (3 PC). It pays with its own note, and the 3-cycle sandbox-mallory -> '
@@ -230,10 +243,10 @@ TOUR_COMPLETED = ('The tour is complete. Deals with the sandbox agents from now 
 
 BRIEF_NOTE = ('PC are pilot credits with no monetary value: a credit note is an outstanding promise, and nothing is redeemed. '
               'This is the brief view; call valun_status with brief=false for your mandate, consent policy and honest labels.')
-BRIEF_NOTE_TESTNET = ('Amounts are nanoERG of tERG, Ergo testnet coins with no monetary value: a credit note is an outstanding '
-                      "promise, which its creditor can redeem on Ergo testnet against the issuer's reserve, if it has one. "
-                      'This is the brief view; call valun_status with brief=false for your mandate, consent policy and '
-                      'honest labels.')
+BRIEF_NOTE_TESTNET = ('Amounts are nanoERG of tERG, Ergo testnet coins with no monetary value: a note is a promise to pay '
+                      'that stays outstanding, which its holder can redeem on Ergo testnet only against a tERG reserve '
+                      'locked under the key that signed it, if one was posted. This is the brief view; call valun_status '
+                      'with brief=false for your mandate, consent policy and honest labels.')
 
 
 def self_serve_words(participant, info):
@@ -274,7 +287,7 @@ def guarantees_waiting(g):
     if not any(out.values()):
         return None
     out['how'] = ("valun_guarantees shows each one. valun_respond_guarantee action='accept' or 'decline' answers an offer; "
-                  "action='honor' pays a call with your own credit note. valun_call_guarantee calls a due one, only if the "
+                  "action='honor' pays a call with your own note. valun_call_guarantee calls a due one, only if the "
                   'issuer still owes you (callable_now).')
     return out
 
@@ -377,11 +390,11 @@ def client_signs(policy, unit=vc.UNIT):
     upto = f', up to {vc.amount_text(cap, unit)} each' if _whole(cap) else ''
     out = []
     if policy.get('setoff'):
-        out.append(f'set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change){upto}')
+        out.append(f'set-offs that clear loops of notes you hold and issued (your net position does not change){upto}')
     if policy.get('as_issuer'):
-        out.append(f'debt transfers that move your own debt to a new creditor (your total owed does not change){upto}')
+        out.append(f'transfers that move notes you issued to a new holder (what you owe in all does not change){upto}')
     if policy.get('as_new_creditor'):
-        out.append(f'payments to you by debt transfer, of notes from issuers your owner accepts{upto}')
+        out.append(f'payments to you by transfer, of notes from issuers your owner accepts{upto}')
     return out
 
 
@@ -504,7 +517,7 @@ def owner_wait(c, r, deal_id, command=None, kind='deal'):
 # What the Valun server never holds for an owner, in any approval mode (the approval semantics of 2026-11-17): it holds
 # only what the owner's mandate holds (approve_above, review_deliveries). A limit the agent recorded with
 # valun_set_limits can be loosened or cleared with its agent token alone (PUT /limits), never past the owner's mandate.
-NEVER_HELD = ('honoring a guarantee call (your IOU, recorded at once); accepting, calling and releasing guarantees; '
+NEVER_HELD = ('honoring a guarantee call (your note, recorded at once); accepting, calling and releasing guarantees; '
               'deliveries, declines, withdrawals and disputes; loosening or clearing a limit you recorded with '
               "valun_set_limits (never past your owner's mandate); and the consents your client signs by itself")
 # valun_status's approvals sentence for console approvals (the mode the profile names; mcp_server.APPROVAL_TEXT and
@@ -515,16 +528,16 @@ NEVER_HELD = ('honoring a guarantee call (your IOU, recorded at once); accepting
 # novation.one_live_attempt). Any other payment of the deal waits until T + MAX_AGE_MS + FALLBACK_MARGIN_MS.
 CONSOLE_APPROVALS = ('Console approvals: you sign every commitment yourself, and the Valun server holds these for your '
                      'owner in the owner console until they approve: your offers and counter-offers, your acceptances '
-                     '(taking a job included), your guarantee offers, and the IOU or payment by transfer you sign when '
+                     '(taking a job included), your guarantee offers, and the note or payment by transfer you sign when '
                      'you accept a delivery (console sets your owner mandate to approve_above 0 and review_deliveries '
                      'on). Each takes effect only when your owner approves it. Rejecting does not unsign it: the server '
-                     'keeps your signed offer, acceptance or IOU on record, and a rejected IOU could still be recorded by '
+                     'keeps your signed offer, acceptance or note on record, and a rejected note could still be recorded by '
                      'the tracker until an hour after you signed it, so paying that deal by transfer waits until 1 hour '
                      "and 2 minutes after you signed it (your Valun client's time, a minute after the server's, which the "
                      'owner console shows, as a margin for clocks that differ). A rejected payment by transfer is the '
                      'exception: it is deleted, '
                      'its signatures included (the server keeps only their hashes), and you may pay again through the same '
-                     'IOU at once while it is unchanged; any other payment of that deal waits until 1 hour and 2 minutes '
+                     'note at once while it is unchanged; any other payment of that deal waits until 1 hour and 2 minutes '
                      'after you signed it. When an answer says something waits for your owner, tell them at once: nothing '
                      'else tells them. These are not held, so they take effect when you sign: ' + NEVER_HELD + '.')
 
@@ -548,7 +561,7 @@ def held_for_owner(mandate, server, unit=vc.UNIT, console=False):
         held.append(f'your offers, counter-offers and acceptances priced above {vc.amount_text(above, unit)}, and your '
                     'guarantee offers capped above it (approve_above)')
     if review:
-        held.append('the IOU or payment by transfer you sign when you accept a delivery (review_deliveries is on)')
+        held.append('the note or payment by transfer you sign when you accept a delivery (review_deliveries is on)')
     lead = ('Your owner has changed your owner mandate since console set it: the Valun server holds ' if console else
             'The Valun server also holds ')
     if not held:
@@ -748,14 +761,14 @@ def owner_turn(d, me_id, now_ms=None):
                     f'owner console until {shown(hold)} (20 minutes after you signed it); then it ends and nothing moves')
         by, exp, passed = held_note_hour(d, now_ms)
         if passed:
-            return ("your owner's: the IOU you signed when you accepted the delivery still waits for them, but the tracker "
+            return ("your owner's: the note you signed when you accepted the delivery still waits for them, but the tracker "
                     f'records it only until {exp}, which has passed: tell your owner to reject it in the owner console '
                     '(approved now, it would fail at the tracker and leave the delivery accepted, unpaid and no longer '
-                    'disputable), then accept the delivery again to sign a new IOU')
+                    'disputable), then accept the delivery again to sign a new note')
         if exp:
-            return ("your owner's: the IOU you signed when you accepted the delivery waits for them in the owner console: "
+            return ("your owner's: the note you signed when you accepted the delivery waits for them in the owner console: "
                     f'they approve or reject it by {_deadline_words(by, exp)}')
-        return ("your owner's: the IOU or payment by transfer you signed when you accepted the delivery waits for them in "
+        return ("your owner's: the note or payment by transfer you signed when you accepted the delivery waits for them in "
                 "the owner console")
     acc = d.get('acceptance') if isinstance(d.get('acceptance'), dict) else {}
     held_for = acc.get('held_for') if isinstance(acc.get('held_for'), list) else []
@@ -864,23 +877,23 @@ def owner_decisions(d, attempts=None):
         elif kind == 'issue_note':
             bound = ts is not None and ts % 1000 == nv.BOUND_MS and free_after(ts) is not None
             if not (latest and st in UNPAID):
-                text = (f'{earlier}your owner rejected the IOU you signed for this deal' if state == 'rejected' else
-                        f'{earlier}the IOU you signed for this deal went void ({shown(state)})') + (
+                text = (f'{earlier}your owner rejected the note you signed for this deal' if state == 'rejected' else
+                        f'{earlier}the note you signed for this deal went void ({shown(state)})') + (
                     f': it was never sent to the tracker.{moved}')
             else:
-                head = {'rejected': ('Your owner rejected the IOU you signed for this deal. The Valun server did not send it '
+                head = {'rejected': ('Your owner rejected the note you signed for this deal. The Valun server did not send it '
                                      'to the tracker, and you owe nothing for it.'),
-                        'void_stale': ("The IOU you signed for this deal went void when your owner approved it (void_stale): "
-                                       "the pair's IOU or a party's key had changed since you signed it. The Valun server "
+                        'void_stale': ("The note you signed for this deal went void when your owner approved it (void_stale): "
+                                       "the pair's note or a party's key had changed since you signed it. The Valun server "
                                        'did not send it, and you owe nothing for it.'),
-                        'void_key_revoked': ("The IOU you signed for this deal went void before your owner decided "
+                        'void_key_revoked': ("The note you signed for this deal went void before your owner decided "
                                              "(void_key_revoked): a party's key was revoked. The Valun server did not send "
                                              'it, and you owe nothing for it.')}.get(
-                    state, f'The IOU you signed for this deal went void ({shown(state)}). The Valun server did not send it, '
+                    state, f'The note you signed for this deal went void ({shown(state)}). The Valun server did not send it, '
                            'and you owe nothing for it.')
-                steps = _pay_steps(st, ('accept the delivery again to sign a new IOU (it waits for your owner again)'
+                steps = _pay_steps(st, ('accept the delivery again to sign a new note (it waits for your owner again)'
                                         if st == 'delivered' else
-                                        'accept it again to sign a new IOU (it waits for your owner again)'))
+                                        'accept it again to sign a new note (it waits for your owner again)'))
                 if state == 'rejected':
                     kept = (' The rejection did not unsign it: the server keeps it on record, and the tracker could still '
                             'record it ' + (f"until {note_expires_at({'timestamp': ts})}." if bound else
@@ -894,14 +907,14 @@ def owner_decisions(d, attempts=None):
                 # once the pair's IOU moves past it, that is attempt_outcome_unknown, as in 0.7.1.
                 wait = (f'paying this deal by transfer waits until after {free_after(ts)} ({MARGIN_WORDS})' if bound else
                         'paying this deal by transfer waits until a little over an hour after you signed it, unless this '
-                        "pair's IOU moves past it first" if mine is None
-                        else "paying this deal by transfer waits until your client sees this pair's IOU move past it")
+                        "pair's note moves past it first" if mine is None
+                        else "paying this deal by transfer waits until your client sees this pair's note move past it")
                 if counted:
-                    count = (' Your Valun client counts it as not applied: a new IOU of this deal may be signed now, and '
-                             + wait + (", or until your client sees this pair's IOU move past it." if bound else '.'))
+                    count = (' Your Valun client counts it as not applied: a new note of this deal may be signed now, and '
+                             + wait + (", or until your client sees this pair's note move past it." if bound else '.'))
                 elif mine is not None:
                     count = (f' {wait[0].upper()}{wait[1:]}.' if bound else '') + (
-                        ' Your Valun client still counts it as a payment that may apply: once this pair\'s IOU moves past '
+                        ' Your Valun client still counts it as a payment that may apply: once this pair\'s note moves past '
                         'it, your client pays this deal no more until your owner resolves it (`valun attempts resolve`).'
                         if bound else ' Your Valun client still counts it as a payment that may apply (an ordinary note '
                         'has no maximum age): it pays this deal by transfer no more until your owner resolves it '
@@ -918,7 +931,7 @@ def owner_decisions(d, attempts=None):
                         'void_expired': ('Your payment by transfer expired before your owner decided (its hold ends 20 '
                                          'minutes after you sign it).'),
                         'void_stale': ('Your payment by transfer went void when your owner approved it (void_stale): it was '
-                                       "out of date (an IOU it moves, a party's key or a rule had changed since you signed "
+                                       "out of date (a note it moves, a party's key or a rule had changed since you signed "
                                        'it).'),
                         'void_key_revoked': ("Your payment by transfer went void before your owner decided "
                                              "(void_key_revoked): a party's key was revoked.")}.get(
@@ -929,14 +942,14 @@ def owner_decisions(d, attempts=None):
                          'about an hour after you signed it')
                 # As for an IOU: this client's waits where it holds a record, else the server's (which ends once the IOU
                 # it would have moved has moved past it: attemptDeadByJournal).
-                sooner = (', or once your client sees that IOU move past it' if counted else
-                          ' (or once that IOU moves past it)' if mine is None else '')
+                sooner = (', or once your client sees that note move past it' if counted else
+                          ' (or once that note moves past it)' if mine is None else '')
                 text = (head + ' Nothing moved, and the Valun server deleted your signatures of it (it keeps only their '
-                        'hashes).' + _pay_steps(st, 'pay again through the same IOU at once while it is unchanged (it '
-                                                    'waits for your owner again), or with your own IOU or another IOU '
+                        'hashes).' + _pay_steps(st, 'pay again through the same note at once while it is unchanged (it '
+                                                    'waits for your owner again), or with your own note or another note '
                                                     f'{other}{sooner}')
                         + (' Your Valun client counts it as not applied.' if counted else
-                           ' Your Valun client still counts it as a payment that may apply: once that IOU moves past it, '
+                           ' Your Valun client still counts it as a payment that may apply: once that note moves past it, '
                            'your client pays this deal no more until your owner resolves it (`valun attempts resolve`).'
                            if mine is not None else ''))
         elif kind == 'guarantee_offer':
@@ -999,14 +1012,14 @@ def counterparty_owner_decisions(d, me_id):
                     'owed.')
         elif kind == 'issue_note':
             if latest and st in ('delivered', 'payment_due'):
-                text = ((f"The IOU {cp}'s agent signed for your delivery went void when its owner approved it (it was out "
-                         'of date).' if void else f"{lead}'s owner rejected the IOU its agent signed for your delivery.")
+                text = ((f"The note {cp}'s agent signed for your delivery went void when its owner approved it (it was out "
+                         'of date).' if void else f"{lead}'s owner rejected the note its agent signed for your delivery.")
                         + f' Nothing reached the tracker, and {cp} owes you nothing for this deal yet. '
                         + (f"The deal is back to delivered: {cp}'s agent may accept it again or dispute it." if st == 'delivered'
                            else f'The delivery stays accepted: {cp} must still pay it.'))
             else:
-                text = (f"{earlier}the IOU {cp}'s agent signed for your delivery went void when its owner approved it"
-                        if void else f"{earlier}{cp}'s owner rejected the IOU its agent signed for your delivery") + (
+                text = (f"{earlier}the note {cp}'s agent signed for your delivery went void when its owner approved it"
+                        if void else f"{earlier}{cp}'s owner rejected the note its agent signed for your delivery") + (
                     f'; nothing reached the tracker.{moved}')
         else:                                   # pay_by_transfer
             what = ('went void when its owner approved it (it was out of date)' if void else
@@ -1044,9 +1057,9 @@ def owes(role, who, price, unit=vc.UNIT, circulating=False):
     step 2's offer said "(your credit note)" for a deal the tour paid by transfer)."""
     p = vc.amount_text(price, unit)
     if role == 'payer' and circulating is True:
-        return f'after you accept their delivery you will pay {who} {p}: with your credit note, or with notes you hold if you choose to.'
-    return (f'after you accept their delivery you will owe {who} {p} (your credit note).' if role == 'payer'
-            else f'you must deliver; {who} would then owe you {p} (their credit note).')
+        return f'after you accept their delivery you will pay {who} {p}: with your own note, or with notes you hold if you choose to.'
+    return (f'after you accept their delivery you will owe {who} {p} (your note).' if role == 'payer'
+            else f'you must deliver; {who} would then owe you {p} (their note).')
 
 
 def tracker_words(network):
@@ -1155,7 +1168,7 @@ ARGUMENT_WORDS = {
     'price': 'the price: a whole number, at least 1',
     'decision': 'accept or dispute',
     'amount': "what it would owe you, the deal's price: a whole number, at least 1",
-    'issuer': 'the handle or participant id of the agent whose debt you back',
+    'issuer': 'the handle or participant id of the agent whose notes you guarantee',
     'creditor': 'the handle or participant id of the agent you would pay',
     'cap': 'the most you pay in all: a whole number, at least 1',
     'due_in_hours': 'hours from now until the creditor can call: 0 for as soon as it accepts',
@@ -1311,15 +1324,15 @@ def tool_arguments(name, args, unit=vc.UNIT):
 # server gives no reasons; and the words for the payee's own side of the step (payee_side) when it would not simply go
 # ahead and the server gives no reasons for it.
 CHECK_LEAD = {'accept': 'Accept', 'ask_owner': "Ask the payer's owner", 'decline': 'Decline'}
-CHECK_FALLBACK = {'accept': "its owner's budget card allows this IOU",
-                  'ask_owner': "the payer's owner approves an IOU this size before it binds",
-                  'decline': "its owner's budget card does not allow this IOU"}
+CHECK_FALLBACK = {'accept': "its owner's budget card allows this note",
+                  'ask_owner': "the payer's owner approves a note this size before it binds",
+                  'decline': "its owner's budget card does not allow this note"}
 CHECK_PAYEE_SIDE = {'decline': 'your own limits refuse it', 'ask_owner': 'your owner approves it before it binds'}
 # Fix inbox #87: an ask_owner from a server that gives the step's verdict from both sides (payer_side): the summary's
 # first words, and its words without reasons, by whose owner decides first (check_owners).
 CHECK_ASK_LEAD = {'payee': 'Ask your owner', 'payer': "Ask the payer's owner", 'both': "Ask your owner and the payer's owner"}
 CHECK_ASK_FALLBACK = {'payee': 'your owner approves it before it binds',
-                      'payer': "the payer's owner approves an IOU this size before it binds",
+                      'payer': "the payer's owner approves a note this size before it binds",
                       'both': "your owner and the payer's owner approve it before it binds"}
 # A deal id as the server writes one (the offer under review, deal=; counted_offers).
 _OFFER_ID = re.compile(r'vd_[0-9a-f]{16}')
@@ -1544,9 +1557,9 @@ def note_summary(d, network=vc.NETWORK, unit=vc.UNIT, circulating=False, server=
     cp = d.get('counterparty') if isinstance(d.get('counterparty'), dict) else {}
     who = shown(cp['handle']) if isinstance(cp.get('handle'), str) and cp['handle'] else 'the other party'
     payer = (role or d.get('your_role')) == 'payer'
-    out = (f"You owe {who} {vc.amount_text(amount, unit) if _whole(amount) else 'the price'} more by this deal's IOU"
+    out = (f"You owe {who} {vc.amount_text(amount, unit) if _whole(amount) else 'the price'} more by this deal's note"
            if payer else
-           f"{who} owes you {vc.amount_text(amount, unit) if _whole(amount) else 'the price'} more by this deal's IOU")
+           f"{who} owes you {vc.amount_text(amount, unit) if _whole(amount) else 'the price'} more by this deal's note")
     total = tn.get('amount_collected')
     out += f" (the tracker's running total for that pair: {vc.amount_text(total, unit)})." if _whole(total) else '.'
     conf = n.get('confirmation') or tn.get('confirmation')
@@ -1558,12 +1571,15 @@ def note_summary(d, network=vc.NETWORK, unit=vc.UNIT, circulating=False, server=
                 ' Where it stands: the tracker recorded it, and a tracker box on Ergo testnet commits it.')
         out += (f' Check it: {row} (its total and confirmation), and `valun audit --mine`, which checks your records '
                 'against the box once the next box commits them.')
-        redeem = (f'{who} redeems it on Ergo testnet against your reserve, if you post one' if payer else
-                  f"you redeem it on Ergo testnet against {who}'s reserve, if it posts one")
+        redeem = (f'{who} can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that '
+                  'signed it, once a tracker box commits it' if payer else
+                  f'you can redeem it for tERG on Ergo testnet only against a reserve {who} locks under the key that '
+                  'signed it, once a tracker box commits it')
         if circulating:
             passes = (f'{who} passes it on (pays another agent with it, which changes only whom you owe)' if payer else
                       f'you pass it on (pay_with when you accept a delivery, which changes only whom {who} owes)')
-            out += f' It stays outstanding until a loop clears it (a set-off around a cycle of debts), {passes}, or {redeem}.'
+            out += (f' It stays outstanding until a loop clears it (a set-off around a loop of notes: it clears, and settles '
+                    f'nothing), {passes}, or {redeem}.')
         else:
             out += f' It stays outstanding until {redeem}.'
         return out
@@ -1593,9 +1609,9 @@ def closed_summary(item):
     amt = vc.amount_text(amount, unit) if _whole(amount) and isinstance(unit, str) and unit else 'its price'
     cp = item.get('counterparty')
     who = shown(cp) if isinstance(cp, str) and cp else 'the other party'
-    lead = (f'Paid with your IOU: this deal added {amt} to what you owe {who}.' if item.get('your_role') == 'payer' else
-            f'{who} paid with its IOU: this deal added {amt} to what {who} owes you.')
-    return lead + ' valun_deal shows where it stands on the tracker and how it is paid back.'
+    lead = (f'Paid with your note: this deal added {amt} to what you owe {who}.' if item.get('your_role') == 'payer' else
+            f'{who} paid with its note: this deal added {amt} to what {who} owes you.')
+    return lead + ' valun_deal shows where it stands on the tracker and how it can be cleared, passed on or redeemed.'
 
 
 def exact_advice(exact):
@@ -1604,10 +1620,26 @@ def exact_advice(exact):
     never "does not match"."""
     if exact.get('built_in_format') is False:
         return ('The delivery is not in the built-in format: it has no ```json result block to compare with the exact '
-                'result of the agreed text. Dispute it with that reason instead of issuing an IOU.')
+                'result of the agreed text. Dispute it with that reason instead of issuing a note.')
     return ('The delivered result does not match the exact result of the agreed text '
             f"(differs in: {', '.join(str(k) for k in (exact.get('differs_in') or ['the result block']))}). "
-            'Dispute it with that reason instead of issuing an IOU.')
+            'Dispute it with that reason instead of issuing a note.')
+
+
+# valun_directory's label of an agent the server runs, in the server's own A2A words (lib/a2a.mjs PRACTICE_WORDS,
+# HOUSE_WORDS): which practice agent it is, and that a house agent runs on a shared AI budget and may decline (fix inbox
+# #177 item 6).
+DIRECTORY_LABELS = {SANDBOX_EXACT: 'practice agent, operator-run; always exact, the one to try first',
+                    SANDBOX_MALLORY: 'practice agent, operator-run; wrong on purpose about half the time, for trying a dispute'}
+HOUSE_LABEL = 'house agent, operator-run; Claude on a shared daily and monthly budget, so it may decline'
+
+
+def directory_label(p):
+    """The label valun_directory gives a directory entry: a practice agent's (operator_run) or a house agent's
+    (house_agent), else None."""
+    if p.get('operator_run') is True and p.get('handle') in DIRECTORY_LABELS:
+        return DIRECTORY_LABELS[p['handle']]
+    return HOUSE_LABEL if p.get('house_agent') is True else None
 
 
 def directory_text(v):
@@ -1822,7 +1854,7 @@ def error_payload(e, setup_hint='run `valun join` (or `valun enroll`) in a termi
             out['what_this_means'] = ('Your Valun client cannot read its own records, so it signs nothing until they are fixed. '
                                       'Nothing was signed. Tell your owner.')
         if e.code == 'already_paid':
-            out['what_this_means'] = ('Your earlier credit note for this deal is (or may already be) on the tracker, so the deal '
+            out['what_this_means'] = ('Your earlier note for this deal is (or may already be) on the tracker, so the deal '
                                       'counts as paid. Nothing was signed. Do not try to pay it again; tell your owner.')
         if e.code == 'mandate_exceeded':
             out['what_this_means'] = ("Your owner's mandate does not allow this. Nothing was recorded. Do not try to work around "
@@ -1857,7 +1889,7 @@ def error_payload(e, setup_hint='run `valun join` (or `valun enroll`) in a termi
         if e.code == 'feature_unavailable':
             out['what_this_means'] = ('This Valun server does not offer circulating credit (paying with notes you hold, '
                                       'set-offs), or not on the tracker contract your client signs for (tracker v3.2). '
-                                      'Nothing was signed. Pay with your own credit note (leave pay_with out); if that fails '
+                                      'Nothing was signed. Pay with your own note (leave pay_with out); if that fails '
                                       'too, tell your owner: the server must run tracker v3.2.')
         if e.code == 'unknown_issuer':
             out['what_this_means'] = ('The payment options for this deal list no note of yours from that issuer. Nothing was '
@@ -2543,15 +2575,15 @@ class ValunAgent:
         cap, due, window, honor, ttl = (_guarantee_int(a, k, d) for k, d in (('cap', None), ('due_in_hours', None), ('callable_for_hours', 168),
                                                                              ('honor_within_hours', 24), ('offer_valid_hours', 24)))
         return '\n'.join([
-            f"Valun - sign a GUARANTEE: back what {issuer} ({shown(snap['issuer']['id'])}) owes {creditor} ({shown(snap['creditor']['id'])}):",
+            f"Valun - sign a GUARANTEE of what {issuer} ({shown(snap['issuer']['id'])}) owes {creditor} ({shown(snap['creditor']['id'])}):",
             (f'  you pay {creditor} up to {vc.amount_text(cap, u)} in all, for what {issuer} still owes it for the deals '
-             f"{', '.join(shown(d) for d in a['deals'])} after {due} h from now (debt from any other deal is not covered),"
+             f"{', '.join(shown(d) for d in a['deals'])} after {due} h from now (what it owes for any other deal is not covered),"
              if isinstance(a.get('deals'), list) and a.get('deals') else
              f'  you pay {creditor} up to {vc.amount_text(cap, u)} in all, for what {issuer} still owes it after {due} h from now '
-             f'(any debt to it, also new debt: the cap is your exposure),'),
-            f'  if {creditor} calls in the {window} h after that; you pay a call within {honor} h, with your own credit note',
+             f'(anything it owes it, also what it comes to owe later: the cap is your exposure),'),
+            f'  if {creditor} calls in the {window} h after that; you pay a call within {honor} h, with your own note',
             f'  the offer stays open {ttl} h; until the guarantee ends its cap counts against your limits as credit you may have to issue',
-            f'If {creditor} accepts and calls, you will owe {creditor} what it called (your credit note); {issuer} still owes it too.',
+            f'If {creditor} accepts and calls, you will owe {creditor} what it called (your note); {issuer} still owes it too.',
             snap.get('not_settled', NOT_SETTLED),
             quote_line('Note written by your agent', {'note': a.get('note') or ''})])
 
@@ -2562,7 +2594,7 @@ class ValunAgent:
         backer, issuer = shown(_party(g, 'backer', t)), shown(_party(g, 'issuer', t))
         open_calls = [x for x in (g.get('calls') or []) if isinstance(x, dict) and x.get('state') in ('open', 'failed')]
         return '\n'.join([
-            f"Valun - RELEASE guarantee {shown(g.get('guarantee_id'))} from {backer}: it backs what {issuer} owes you, up to "
+            f"Valun - RELEASE guarantee {shown(g.get('guarantee_id'))} from {backer}: it guarantees what {issuer} owes you, up to "
             f"{vc.amount_text(t['cap']['amount'], u)}.",
             '  after this you can no longer call it' + (f'; its {len(open_calls)} unhonored call(s) end too' if open_calls else ''),
             f"  terms hash {chk['terms_hash'][:16]}... (recomputed from these terms; your Valun client checks it again before signing)",
@@ -2575,15 +2607,16 @@ class ValunAgent:
         creditor, issuer = shown(_party(g, 'creditor', t)), shown(_party(g, 'issuer', t))
         amount = call['amount']
         return '\n'.join([
-            f"Valun - HONOR call {shown(call.get('call_id'))} of your guarantee {shown(g.get('guarantee_id'))}: ISSUE A CREDIT NOTE "
+            f"Valun - HONOR call {shown(call.get('call_id'))} of your guarantee {shown(g.get('guarantee_id'))}: ISSUE A NOTE "
             f'of {vc.amount_text(amount, u)} to {creditor}:',
-            f"  you backed what {issuer} owes {creditor}, up to {vc.amount_text(t['cap']['amount'], u)}; honored so far: "
+            f"  you guaranteed what {issuer} owes {creditor}, up to {vc.amount_text(t['cap']['amount'], u)}; honored so far: "
             f"{vc.amount_text(g.get('honored') if _whole(g.get('honored')) else 0, u)}",
             f"  {issuer} owes {creditor} {shown(g.get('issuer_owes_creditor'))} {u} on the tracker now (as the server shows it); "
             f"the call is due by {shown(call.get('honor_by'))}",
             f"  terms hash {chk['terms_hash'][:16]}... (your Valun client checks the guarantee, the creditor's signature on the call "
             'and your own record of the cap again before signing)',
-            f'Your agent signs a Basis note; {tracker_words(snap.get("network"))} then records that you owe {creditor} '
+            f'Your agent signs a note in the tracker\'s format; {tracker_words(snap.get("network"))} then records that you owe '
+            f'{creditor} '
             f'{vc.amount_text(amount, u)} more.',
             snap.get('not_settled', NOT_SETTLED)])
 
@@ -2715,12 +2748,13 @@ class ValunAgent:
         facts = [f"{x['requirement']}: {x['measured']} ({'met' if x['met'] else 'NOT met'})" for x in m['checks_against_agreed_terms']]
         facts += exact_facts(t, content, chk.get('handle'))
         return '\n'.join([
-            f"Valun - ACCEPT {who}'s delivery ({shown(chk['other_id'])}, deal {shown(t['deal_id'])}) and ISSUE A CREDIT NOTE "
+            f"Valun - ACCEPT {who}'s delivery ({shown(chk['other_id'])}, deal {shown(t['deal_id'])}) and ISSUE A NOTE "
             f'of {vc.amount_text(price, u)} to {who}:',
             f"  delivered: {len(content.encode('utf-8'))} bytes, sha256 {chk['sha256'][:16]}... (recomputed from the text measured here)",
             '  measured: ' + ('; '.join(facts) or f"{m['word_count']} words, {len(m['links'])} links"),
             f"  agreed terms hash {chk['terms_hash'][:16]}... (your Valun client checks both hashes again before signing)",
-            f'Your agent signs a Basis note; {tracker_words(snap.get("network"))} then records that you owe {who} '
+            f'Your agent signs a note in the tracker\'s format; {tracker_words(snap.get("network"))} then records that you owe '
+            f'{who} '
             f'{vc.amount_text(price, u)} more.',
             snap.get('not_settled', NOT_SETTLED),
             quote_line('Delivery title and agreed service text', {'delivery_title': dl.get('title') or '', 'title': svc.get('title'),
@@ -2741,11 +2775,10 @@ class ValunAgent:
         facts += exact_facts(t, content, chk.get('handle'))
         return '\n'.join([
             f"Valun - PAY {payee} {vc.amount_text(price, u)} for deal {shown(t['deal_id'])} by moving {vc.amount_text(price, u)} "
-            f"of {issuer}'s debt from you "
-            f'to {payee}:',
-            f'  your claim on {issuer}: {x} -> {x - price} {u} (issuer signature checked by your client)',
-            f'  {issuer} will owe {payee} {y} -> {y + price} {u}; its total debt does not change',
-            '  you issue no credit note for this deal',
+            f'of what {issuer} owes you to {payee}:',
+            f"  the total of {issuer}'s note to you: {x} -> {x - price} {u} (issuer signature checked by your client)",
+            f"  the total of {issuer}'s note to {payee}: {y} -> {y + price} {u}; what {issuer} owes in all does not change",
+            '  you issue no note for this deal',
             f'  {issuer} consents {CONSENT_SPEED_WORDS.get(speed, shown(speed))}; accepting is final: if the transfer does not '
             'complete the deal stays accepted and you pay later',
             f"  {issuer} is {shown(iss['id'])} and {payee} is {shown(chk['other_id'])}; quote {tr['quote_digest'][:16]}... "
@@ -2821,7 +2854,8 @@ class ValunAgent:
             pending = pos['pending'].get('consents_waiting_for_you')
         log = c.state.get('consent_log') if isinstance(c.state.get('consent_log'), list) else []
         spend = sum(n['amount_PC'] for n in notes)
-        summary = (f'You hold {shown(hold)} {u} of credit notes others issued to you and owe {shown(owe)} {u} (net {shown(net)} {u}); '
+        summary = (f'You hold {shown(hold)} {u} of notes others issued to you and owe {shown(owe)} {u} of your own '
+                   f'(net {shown(net)} {u}); '
                    f'set-offs have cleared {shown(cleared)} {u} so far. '
                    + (f"You can spend {vc.amount_text(spend, u)} of notes you hold ({', '.join(shown(n['issuer']) for n in notes)}) with pay_with "
                       'when you accept a delivery. ' if notes else 'You hold no notes you can spend now. ')
@@ -2830,11 +2864,13 @@ class ValunAgent:
                    + (f' {pending} consent(s) wait for your client.' if _whole(pending) and pending > 0 else ''))
         out = {'summary': summary,
                'money_view': {'you_hold_PC': hold, 'you_owe_PC': owe, 'net_PC': net, 'cleared_so_far_PC': cleared,
-                              'how_to_read': ('hold: credit notes others issued to you that are still outstanding (what they '
-                                              'owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note '
-                                              'you hold moves it to the payee (hold falls by the price); a set-off cancels equal '
-                                              'claims and debts around a cycle (hold and owe fall together, net does not change); '
-                                              'cleared_so_far counts what set-offs cancelled. ' + VALUE_WORDS.get(u, VALUE_WORDS['PC']))},
+                              'how_to_read': ('hold: the notes others issued to you that are still outstanding (what '
+                                              'they owe you); owe: your own outstanding notes (what you owe); net = hold - '
+                                              'owe. Paying with a note you hold moves that much of it to the payee (hold '
+                                              'falls by the price); a set-off clears a loop of notes (hold and owe fall '
+                                              'together, net does not change): it clears, and settles nothing; '
+                                              'cleared_so_far counts what set-offs cleared. '
+                                              + VALUE_WORDS.get(u, VALUE_WORDS['PC']))},
                'notes_you_can_spend': notes,
                'payments_in_progress': box.get('payments_in_progress') if isinstance(box.get('payments_in_progress'), list) else [],
                'clearing': {'your_client_signs': signs, 'consents_pending': pending,
@@ -2872,7 +2908,7 @@ class ValunAgent:
                         'checked_by_your_client': isinstance(st, dict) and _whole(st.get('total')) and st['total'] >= amount,
                         'issuer_consents': n.get('issuer_consents'),
                         'how': f"valun_review_delivery decision='accept' pay_with={quoted(name)}: pays a delivery by moving that "
-                               'much of their debt to you onto the payee'})
+                               'much of what they owe you onto the payee'})
         return out
 
     def _sandbox_next_steps(self, c, participant, pos, box, notes):
@@ -2925,7 +2961,7 @@ class ValunAgent:
             x = listed['awaiting_your_owner'][0]
             where, _wait = owner_wait(c, {'approvals': [{'id': x.get('approval_id'), 'state': 'pending'}]}, x.get('deal_id'),
                                       self.console_command)
-            # A held IOU names the console's deadline for it, and once the tracker's hour has passed, that the owner must
+            # A held note names the console's deadline for it, and once the tracker's hour has passed, that the owner must
             # reject it (the 0.7.2 review: an approval then fails at the tracker and leaves the delivery accepted and no
             # longer disputable).
             by, exp, passed = held_note_of(c, x, int(vc.time.time() * 1000))
@@ -2959,7 +2995,7 @@ class ValunAgent:
                 pay = other if _whole(price) and spendable.get(other, 0) >= price else 'own_note'
                 args = {'deal_id': did, 'decision': 'accept', 'expected_deliverable_sha256': dl.get('sha256'), 'pay_with': pay}
                 why = ('the delivery matches the exact result of the agreed text: accept it and pay '
-                       + ('with your own credit note' if pay == 'own_note' else f'with the note {pay} issued to you'))
+                       + ('with your own note' if pay == 'own_note' else f'with the note {pay} issued to you'))
                 return plan(step, [call('valun_review_delivery', args, why)],
                             'Payment by transfer applies at once with the sandbox agents; call valun_status again.')
             fields = ', '.join(str(k) for k in ((exact or {}).get('differs_in') or ['the result']))
@@ -2996,7 +3032,7 @@ class ValunAgent:
         # it was paid between the GET /me these holdings come from and the GET /inbox read after it. Either way its note
         # is not in the holdings yet: wait, never start another deal on them (that sold a second job to sandbox-exact).
         if count('agreed_note_not_issued'):
-            return plan(4 if ox > 0 else 1, [], 'A deal of yours with a sandbox agent is being paid (its credit note is being '
+            return plan(4 if ox > 0 else 1, [], 'A deal of yours with a sandbox agent is being paid (its note is being '
                                                  'recorded on the tracker); wait for it: call valun_status again in a few seconds.')
         if (hx > 0 or hm > 0) and ox > 0:
             # Step 4's 3-cycle sandbox-mallory -> you -> sandbox-exact -> sandbox-mallory has a third leg that is not
@@ -3038,7 +3074,7 @@ class ValunAgent:
                                'valun_status again.')
         p = offer(1, SANDBOX_EXACT, 'payee', 'text-stats')
         if paid_by_transfer > 0:                # spent by transfer, but no set-off has cleared anything: not done yet
-            p['then'] = ('The tour is not complete: no set-off has cleared any of your claims or debts yet, and you hold no '
+            p['then'] = ('The tour is not complete: no set-off has cleared any of the notes you hold or issued yet, and you hold no '
                          "note to spend now. Earn sandbox-exact's note again; then pay sandbox-exact with your own note, and "
                          'the 2-cycle that forms is cleared by a set-off. sandbox-exact answers within a few seconds; call '
                          'valun_status again for the next step.')
@@ -3077,8 +3113,8 @@ class ValunAgent:
         if _whole(hold) and _whole(owe) and _whole(out):
             text += (f'you earned {hold + out + cleared} {unit} and spent {out + owe + cleared} {unit} ({out} by transfer, '
                      f'{owe + cleared} with your own note), and ')
-        text += (f'set-offs cancelled {cleared} {unit} of your claims and {cleared} {unit} of your debts without changing your net '
-                 'position.')
+        text += (f'set-offs cleared {cleared} {unit} of the notes you hold and {cleared} {unit} of the notes you issued, '
+                 'without changing your net position.')
         if (_whole(hold) and hold > 0) or (_whole(owe) and owe > 0):
             text += f' You still hold {shown(hold)} {unit} and owe {shown(owe)} {unit}.'
         return text + ' You can keep trading with the sandbox agents.'
@@ -3097,11 +3133,13 @@ class ValunAgent:
     def directory(self, a):
         """One page of the active participants other than this one (fix inbox #36), from the list's own fields: those
         matching `query` (case-insensitive) in their handle or display name first, then in services or wants, then only in
-        about (then the rest the text filter matches, across two fields); then the always-on agents the server runs
-        (operator_run: sandbox-exact and sandbox-mallory), then its house agents (house_agent), then the rest (the Nov 18
-        fresh-join run, finding 6: last-seen time alone put idle test agents among them); then those whose agent was
+        about (then the rest the text filter matches, across two fields); then sandbox-exact, then the server's other
+        always-on agents (operator_run: sandbox-mallory), then its house agents (house_agent), then the rest, as the
+        server's own directory order (the Nov 18 fresh-join run, finding 6: last-seen time alone put idle test agents
+        among them; fix inbox #177: sandbox-exact first by rank, not by the handle); then those whose agent was
         active in the last 24 hours (recently_active); then the most recently seen (agent_last_seen, never seen last);
-        then by handle. Only the page's participants are looked up (GET /participants/{id}, for their public position)."""
+        then by handle. Only the page's participants are looked up (GET /participants/{id}, for their public position).
+        An agent the server runs has a label (directory_label)."""
         c = self.client()
         q = (a.get('query') or '').lower()
         limit = min(max(_page_arg(a, 'limit', DIRECTORY_PAGE, PAGE_WORDS['limit']), 1), DIRECTORY_PAGE_MAX)
@@ -3123,19 +3161,23 @@ class ValunAgent:
                 continue
             active = recently_active(p.get('agent_last_seen'), joined_at=p.get('joined_at'))
             seen = seen_us(p.get('agent_last_seen'))
-            kind = 0 if p.get('operator_run') is True else 1 if p.get('house_agent') is True else 2
+            kind = (0 if p.get('operator_run') is True and p.get('handle') == SANDBOX_EXACT else 1 if p.get('operator_run') is True
+                    else 2 if p.get('house_agent') is True else 3)
             ranked.append(((tier, kind, not active, seen is None, -(seen or 0), str(p.get('handle') or '')), p, active))
         ranked.sort(key=lambda r: r[0])
         out = []
         for _, p, active in ranked[offset:offset + limit]:
             pos = c.participant(p['id']).get('public_position', {})
+            label = directory_label(p)
             out.append({'handle': p['handle'], 'id': p['id'], 'name': p['display_name'], 'operator': p['operator'],
-                        'about': directory_text(p['about']), 'services': directory_text(p['services']),
+                        **({'label': label} if label else {}), 'about': directory_text(p['about']), 'services': directory_text(p['services']),
                         'wants': directory_text(p.get('wants') or ''), 'credit_notes_they_hold_PC': pos.get('claims_held'),
                         'credit_notes_they_owe_PC': pos.get('owes'), 'deals': pos.get('deals'),
                         'agent_last_seen': p.get('agent_last_seen'), 'agent_recently_active': active})
-        where = ("positions are outstanding credit notes recorded by the Valun testnet Basis tracker and anchored on Ergo testnet; a "
-                 "creditor can redeem one against its issuer's reserve, if it has one; tERG have no monetary value."
+        where = ('positions are the notes each agent holds (credit_notes_they_hold_PC) and issued (credit_notes_they_owe_PC), '
+                 'outstanding, as the Valun testnet Basis tracker records them; a tracker box on Ergo testnet commits each '
+                 "pair's total. A note is settled only when its holder redeems it against a tERG reserve locked under the key "
+                 'that signed it (GET /reserves); tERG have no monetary value.'
                  if getattr(c, 'network', vc.NETWORK) == TESTNET else
                  'positions are outstanding credit notes recorded by the pilot Basis tracker; nothing is settled; PC have no value.')
         total, end = len(ranked), offset + len(out)
@@ -3147,7 +3189,8 @@ class ValunAgent:
             r['how_to_see_more'] = (
                 f'Showing {offset + 1}-{end} of {total} matching the query (best matches first). For more, call valun_directory '
                 f'again with the same query and offset {end}, or narrow the query.' if q else
-                f"Showing {offset + 1}-{end} of {total} (the operator's always-on agents first, then the most recently active). "
+                f"Showing {offset + 1}-{end} of {total} (sandbox-exact first, then the operator's other agents, then its house "
+                'agents, then the most recently active). '
                 'For more, call valun_directory again '
                 f'with offset {end}, or narrow it with query.')
         return r
@@ -3202,7 +3245,7 @@ class ValunAgent:
                               vals['honor_within_hours'], vals['offer_valid_hours'], note, deals)
         out = {'guarantee': guarantee_brief(g)}
         who, of = shown(creditor.get('handle')), shown(issuer.get('handle'))
-        calls = (f'If {who} calls it, you pay each call with your own IOU to {who}, which is recorded at once and never '
+        calls = (f'If {who} calls it, you pay each call with your own note to {who}, which is recorded at once and never '
                  'held for your owner, even with console approvals.')
         if isinstance(g, dict) and g.get('state') == 'awaiting_owner':
             # Held for the owner (its cap above approve_above): where, which approval, until when, and that approving it
@@ -3263,16 +3306,16 @@ class ValunAgent:
             state = call.get('state') if call is not None else None
             if state == 'honored' and _whole(call.get('amount')):
                 amount = vc.amount_text(call['amount'], getattr(c, 'unit', vc.UNIT))
-                out['what_happened'] = (f'You honored call {shown(cid)}: your IOU to {who} for {amount} '
+                out['what_happened'] = (f'You honored call {shown(cid)}: your note to {who} for {amount} '
                                         f"went to {tracker_words(getattr(c, 'network', vc.NETWORK))} at once. It was not "
                                         'held for your owner: honoring a guarantee call never is, even with console '
                                         f'approvals. You owe {who} {amount} more, and nothing is settled. Tell your owner.')
             elif state == 'failed':
-                out['what_happened'] = (f'The tracker did not record your IOU for call {shown(cid)}, so it adds nothing to '
+                out['what_happened'] = (f'The tracker did not record your note for call {shown(cid)}, so it adds nothing to '
                                         f'what you owe {who}. The call still waits to be honored: honor it again (your '
-                                        'client signs a new IOU), and tell your owner.')
+                                        'client signs a new note), and tell your owner.')
             elif call is not None:
-                out['what_happened'] = (f'Your IOU for call {shown(cid)} was sent; the server shows the call as '
+                out['what_happened'] = (f'Your note for call {shown(cid)} was sent; the server shows the call as '
                                         f'{shown(state)}: valun_guarantees shows when the tracker has recorded it. It was '
                                         'not held for your owner: honoring a guarantee call never is.')
         elif action == 'release':
@@ -3288,7 +3331,7 @@ class ValunAgent:
         g = c.call_guarantee(gid, amount, a.get('expected_terms_hash'))
         hours = g.get('honor_within_hours') if isinstance(g, dict) else None
         return {'guarantee': guarantee_brief(g),
-                'what_happens_next': f'The backer has {shown(hours)} hours to honor the call with its own credit note to you.'}
+                'what_happens_next': f'The backer has {shown(hours)} hours to honor the call with its own note to you.'}
 
     # ---------- budget cards ----------
     def check_payer(self, a):
@@ -3359,25 +3402,25 @@ class ValunAgent:
         elif st == 'note_failed':
             # The IOU failed at the tracker after the delivery was accepted: the acceptance stands, so a dispute is refused
             # (the server's next_actions: complete, wait_for_transfer_window; approval probe D3).
-            out['whose_turn'] = ('yours: the delivery stays accepted and is unpaid; pay it again (a new IOU, or by transfer '
+            out['whose_turn'] = ('yours: the delivery stays accepted and is unpaid; pay it again (a new note, or by transfer '
                                  'when the window allows)' if d.get('your_role') == 'payer' else
-                                 'theirs: the payer accepted your delivery and must pay it again (its IOU failed at the tracker)')
+                                 'theirs: the payer accepted your delivery and must pay it again (its note failed at the tracker)')
         elif st in OWNER_WAITS:
             out['whose_turn'] = owner_turn(d, c.participant_id, now)
             by, exp, _passed = held_note_hour(d, now)
             if exp:                                 # the held IOU's deadlines, which whose_turn names (the 0.7.2 review)
                 out['decide_by'], out['note_expires_at'] = by, exp
         elif st == 'paying_by_transfer':
-            out['whose_turn'] = ('theirs: the issuer and the payee sign the debt transfer that pays this deal (your Valun client '
+            out['whose_turn'] = ('theirs: the issuer and the payee sign the transfer that pays this deal (your Valun client '
                                  'signed your part)' if d.get('your_role') == 'payer' else
-                                 'theirs: the debt transfer that pays you collects its signatures (your Valun client signs '
+                                 'theirs: the transfer that pays you collects its signatures (your Valun client signs '
                                  'yours by itself if your owner allows it)')
         elif st == 'payment_due':
             out['whose_turn'] = ('yours: you accepted the delivery but it is not paid yet; pay it with valun_review_delivery '
                                  "decision='accept' (see how_you_can_pay)" if d.get('your_role') == 'payer' else
                                  'theirs: the payer accepted your delivery and must still pay it')
         elif st == 'paid_by_transfer':
-            out['whose_turn'] = 'nobody: the deal is paid by debt transfer'
+            out['whose_turn'] = 'nobody: the deal is paid by transfer'
         else:
             out['whose_turn'] = f'nobody: the deal is {st}'
         out['current_terms'] = d['current'] and {'version': d['current']['version'], 'by': d['current']['by'], 'state': d['current']['state'],
@@ -3479,7 +3522,7 @@ class ValunAgent:
                             'available': h.get('why_not') is None and h.get('enough') is True, 'why_not': h.get('why_not')})
         return {'options': options, 'pending_transfer': opts.get('pending_transfer'), 'fallback_after': opts.get('fallback_after'),
                 'how': ("valun_review_delivery decision='accept' with pay_with set to an available option (own_note issues your "
-                        'own credit note; a handle passes on a note you hold). Accepting is final: if a transfer does not '
+                        'own note; a handle passes on a note you hold). Accepting is final: if a transfer does not '
                         'complete, the deal stays accepted and you pay later.')}
 
     def propose(self, a):
@@ -3510,8 +3553,8 @@ class ValunAgent:
         return {'deal_id': r['id'], 'status': r['status'], 'terms_hash': r['current']['terms_hash'] if r.get('current') else None,
                 'what_happened': (held if waiting
                                   else f"{other['handle']} can now accept, decline or counter your signed offer."),
-                'if_agreed': (f"After you accept their delivery you issue them a credit note of {signed} (you will owe them; not settled)."
-                              if role == 'payer' else f"After they accept your delivery they issue you a credit note of {signed} (they will owe you; not settled)."),
+                'if_agreed': (f"After you accept their delivery you issue them a note of {signed} (you will owe them; not settled)."
+                              if role == 'payer' else f"After they accept your delivery they issue you a note of {signed} (they will owe you; not settled)."),
                 **({'warning': idle} if idle else {}), **wait}
 
     def respond(self, a):
@@ -3578,7 +3621,7 @@ class ValunAgent:
                                 'the payer sees the same measurements).', extra={'measured': m})
         r = c.deliver(did, a['content'], a.get('title') or '')
         return {'deal_id': r['id'], 'status': r['status'], 'sha256': r['delivery']['sha256'],
-                'what_happened': 'Delivered and signed. The payer will accept it (issuing you a credit note) or dispute it.'}
+                'what_happened': 'Delivered and signed. The payer will accept it (issuing you a note) or dispute it.'}
 
     @staticmethod
     def _deliver_exact(c, a):
@@ -3608,7 +3651,7 @@ class ValunAgent:
             if not (a.get('reason') or '').strip():
                 raise vc.ValunError('reason_required', 'a dispute needs a reason')
             r = c.dispute(did, a['reason'])
-            return {'deal_id': r['id'], 'status': r['status'], 'what_happened': 'Disputed. No credit note was issued; the dispute is recorded.'}
+            return {'deal_id': r['id'], 'status': r['status'], 'what_happened': 'Disputed. No note was issued; the dispute is recorded.'}
         issuer = self._pay_with(a)
         if issuer is not None:
             return self._review_pay_with(c, a, issuer)
@@ -3626,17 +3669,17 @@ class ValunAgent:
             exp, by = note_expires_at(n.get('note')), note_decide_by(n.get('note'))
             if exp:
                 wait['decide_by'], wait['note_expires_at'] = by, exp
-            msg = (f'You accepted the delivery and signed your IOU to {payee} for {price}. The Valun server holds it for '
+            msg = (f'You accepted the delivery and signed your note to {payee} for {price}. The Valun server holds it for '
                    f"your owner: it is not on the tracker yet, and {payee} sees that you accepted the delivery but not the "
-                   f"IOU's signature. Tell your owner to approve or reject it{where}"
-                   + (f' by {_deadline_words(by, exp)}: an IOU still held at {exp} is never recorded and pays nothing, and '
+                   f"note's signature. Tell your owner to approve or reject it{where}"
+                   + (f' by {_deadline_words(by, exp)}: a note still held at {exp} is never recorded and pays nothing, and '
                       'valun_deal then says what to do' if exp else '')
                    + f". If approved, you owe {payee} {price} more: a promise to pay that "
                    f"{tracker_words(getattr(c, 'network', vc.NETWORK))} records, not a settlement. If rejected, it is never "
                    'sent (the server keeps it, still signed) and the deal comes back to you: valun_deal says what you may '
-                   'do (accept the delivery again with a new IOU, which waits for your owner again, or dispute it).')
+                   'do (accept the delivery again with a new note, which waits for your owner again, or dispute it).')
         elif r['status'] == 'note_issued':
-            msg = (f"Credit note issued: the Basis tracker now records that you owe {r['counterparty']['handle']} "
+            msg = (f"Note issued: the Basis tracker now records that you owe {r['counterparty']['handle']} "
                    f"{(n.get('tracker_note') or {}).get('amount_collected')} {getattr(c, 'unit', vc.UNIT)} in total (this deal added {n.get('amount')}). "
                    + labels(self._circulating(c), getattr(c, 'network', vc.NETWORK))['settlement'])
         else:
@@ -3680,18 +3723,18 @@ class ValunAgent:
         if hold and st == 'completion_awaiting_owner':
             wait['hold_expires_at'] = hold
         priced = vc.amount_text(price, u) if _whole(price) else 'the price'
-        held = (f"You accepted the delivery and signed a payment by transfer: {priced} of {shown(by)}'s IOU to you moves "
+        held = (f"You accepted the delivery and signed a payment by transfer: {priced} of {shown(by)}'s note to you moves "
                 f'to {who}. Nobody else has signed it. It waits for your owner{where}'
                 + (f' until {shown(hold)}, 20 minutes after you signed it' if hold else '')
                 + f': tell your owner now. Once approved, {shown(by)} and {who} sign it (their Valun clients do so by '
                 'themselves where their owners allow it), and the delivery stays accepted even if the transfer then '
                 'fails. If your owner rejects it, or that time passes, nothing moves and the deal comes back to you: you '
-                f"may pay again through {shown(by)}'s IOU at once while it is unchanged, or any other way about an hour "
+                f"may pay again through {shown(by)}'s note at once while it is unchanged, or any other way about an hour "
                 'after you signed.')
-        msgs = {'paid_by_transfer': (f'Paid by debt transfer: {by} now owes {who} {amount} {u} more and you {amount} {u} '
-                                     'less; you issued no credit note for this deal. '
+        msgs = {'paid_by_transfer': (f'Paid by transfer: {by} now owes {who} {amount} {u} more and you {amount} {u} '
+                                     'less; you issued no note for this deal. '
                                      + labels(True, getattr(c, 'network', vc.NETWORK))['settlement']),
-                'paying_by_transfer': ('You accepted the delivery and signed the debt transfer; it applies once the issuer and '
+                'paying_by_transfer': ('You accepted the delivery and signed the transfer; it applies once the issuer and '
                                        'the payee sign. Accepting is final: if it does not complete, the deal stays accepted and '
                                        'you pay later.'),
                 'completion_awaiting_owner': held,

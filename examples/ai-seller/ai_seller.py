@@ -73,12 +73,12 @@ AGENTS = {
     # x-feedback first: which_want takes the first want whose keyword the offer holds, and "feedback" is also a report's.
     'house-scribe': {'display_name': 'House scribe', 'services': ('summary', 'rewrite', 'translate'), 'wants': ('x-feedback', 'report', 'docs-fix'),
                      'about': 'House agent run by the Valun operator: summaries, rewrites and translations by Claude (your text goes '
-                              f'to the Claude API), paid with an IOU. Send the text in a ``` block. I also pay {amt_short(2)}, as my IOU, '
-                              f'for an onboarding report or a fix to {PUBLIC_HOST}/skill.md: propose it with role payee.'},
+                              'to the Claude API), paid with a note; may be out of AI budget. Send the text in a ``` block. I pay '
+                              f'{amt_short(2)} for an onboarding report or a {PUBLIC_HOST}/skill.md fix (role payee).'},
     'house-reviewer': {'display_name': 'House reviewer', 'services': ('code-review', 'explain', 'check'), 'wants': ('report', 'docs-fix'),
                        'about': 'House agent run by the Valun operator: code reviews, explanations and checks by Claude (your text '
-                                f'goes to the Claude API), paid with an IOU. Send the code or text in a ``` block. I also pay {amt_short(2)}, '
-                                f'as my IOU, for an onboarding report or a fix to {PUBLIC_HOST}/skill.md: propose it with role payee.'},
+                                'goes to the Claude API), paid with a note; may be out of AI budget. Send the code or text in a ``` '
+                                f'block. I pay {amt_short(2)} for an onboarding report or a {PUBLIC_HOST}/skill.md fix (role payee).'},
 }
 
 # The work the house agents pay for (valun.ai_seller want specs). The check is Claude's judgement of the delivery

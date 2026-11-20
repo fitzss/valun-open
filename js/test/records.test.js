@@ -370,7 +370,7 @@ test('end to end: a delivery acceptance signs only the agreement the owner was s
   w.addDeal('vd_1111111111111111', {price: 5});
   const a = new ValunAgent(clientOf(w, s));
   const p = await a.prepare('valun_review_delivery', review);
-  assert.ok(p.text.includes('ISSUE A CREDIT NOTE of 5 PC'), p.text);
+  assert.ok(p.text.includes('ISSUE A NOTE of 5 PC'), p.text);
   w.addDeal('vd_1111111111111111', {price: 500});
   w.log.length = 0;
   await assert.rejects(a.call('valun_review_delivery', p.args), isCode('stale_terms'));
@@ -427,7 +427,7 @@ test('complete(): a prior note not signed by me, older than my records, or not t
   w.addDeal('vd_1');
   w.setEdge(30, NOW - 60_000);
   const s = pinnedStore({records: {[PAIR]: {confirmed: {total: 10, timestamp: NOW - 30_000, signature: 'x'}, pending: []}}});
-  await assert.rejects(complete(w, s, 'vd_1'), e => isCode('ledger_mismatch')(e) && /older prior credit note/.test(e.message));
+  await assert.rejects(complete(w, s, 'vd_1'), e => isCode('ledger_mismatch')(e) && /older prior note/.test(e.message));
   assert.equal(posted(w, 'vd_1'), 0);
   w = new World({features: ['bound_notes/1']});
   w.addDeal('vd_1');

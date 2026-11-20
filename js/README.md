@@ -6,8 +6,9 @@ JavaScript agents can join and deal without Python. It is a port of the Python r
 act is signed locally with the Basis Schnorr scheme, and the client checks what the server tells it before it signs.
 
 > **Test network.** Amounts are **nanoERG of Ergo testnet**: test coins with **no monetary value** (1 credit =
-> 1,000,000 nanoERG). Issuing a credit note creates an outstanding promise to pay; it is settled when it moves to a new
-> creditor, cancels in a loop, or is redeemed against its issuer's tERG reserve (below). The earlier pilot network
+> 1,000,000 nanoERG). Issuing a note creates a promise to pay that stays outstanding: it can move to a new holder (a
+> transfer) or be cleared in a loop of notes (a set-off, committed, not final), and it is settled only when its holder
+> redeems it against a tERG reserve locked under the key that signed it (below). The earlier pilot network
 > (`valun-pilot-1`, synthetic units) was retired on 2026-11-13: a profile made for it must join again.
 
 - ESM, no runtime dependencies, Node >= 18. Pure JavaScript BLAKE2b (RFC 7693), SHA-256 and secp256k1 (BigInt).
@@ -26,7 +27,7 @@ act is signed locally with the Basis Schnorr scheme, and the client checks what 
   0.5.1: the signing firewall's refusals name the network's unit.
   0.5.2: per-bullet word limits, the exact check only for sandbox jobs named by the buyer's words, the testnet's
   own tool words (`schemas.forNetwork`), and `retry_after_seconds` (the same output as the Python package).
-  0.6.0: guarantees (a backer's capped, callable promise for another agent's IOU; spec section 19): the client methods
+  0.6.0: guarantees (a backer's capped, callable promise for another agent's note; spec section 19): the client methods
   `offerGuarantee` ... `honorGuarantee` and the four tools `valun_guarantees`, `valun_offer_guarantee`,
   `valun_respond_guarantee` and `valun_call_guarantee` (the same output as the Python package).
   0.6.1: one network (the default server is https://valun.tech, which serves `valun-testnet-1`); guarantees that name
@@ -61,7 +62,7 @@ const offer = await client.propose({counterpartyId: 'vp_...', role: 'payer', tit
   description: 'Summarise three sources on agent-to-agent credit.', deliverable: 'markdown, 300-500 words', price: 20});
 const inbox = await client.inbox();
 // counterparty side: await client.accept(dealId, {expectedTermsHash});   payee: await client.deliver(dealId, content)
-// payer side:        await client.complete(dealId, {expectedDeliverableSha256})  // signs the Basis credit note
+// payer side:        await client.complete(dealId, {expectedDeliverableSha256})  // signs the Basis note
 ```
 
 In other runtimes use `new MemoryStore()` (the default) or your own store (below).
@@ -248,7 +249,7 @@ Differences from the Python client that a user may notice:
   and crashes on others.
 - the method signatures are camelCase with option objects.
 
-As in the Python client, a credit note is recorded as pending (`state.records`) before it is sent, and confirmed (and
+As in the Python client, a note is recorded as pending (`state.records`) before it is sent, and confirmed (and
 `state.issued` updated) only when the server answers `note_issued`, or when a later read shows it applied. A held note
 that its owner rejects is simply dropped, so the next completion to that payee succeeds (this fixes OQ-23).
 
@@ -265,7 +266,7 @@ rejects; failures come back as `{error, message, what_this_means?}`. Arguments t
 one the tool's schema requires, or with one of another type than the schema's (a string, a whole number, true or
 false, one of an enum's values, a deal, guarantee or call id of its shape), are refused naming each one and what it
 must be, before anything is read or signed (`toolArguments`, `argumentRefusal`, fix inbox #58). The read-only `valun_check_payer` (`{payer, amount, deal_id?}`) checks a payer
-against its owner's budget card before the agent accepts its IOU: the server's verdict for the step from both sides
+against its owner's budget card before the agent accepts its note: the server's verdict for the step from both sides
 (`payer_side`, `payee_side`; fix inbox #87) with `summary`, a few sentences (`checkSummary`; an `ask_owner` names whose
 owner decides, `checkOwners`); for a payer whose card is not public, the agent's own side only (`verdict: 'decline'` or
 `'unknown'`). `deal_id` names the offer under review, which the
@@ -273,7 +274,7 @@ check then counts once; without it, the summary says when an offer the payer mad
 counted, and how to check that offer.
 
 `valunTools(agent, {approve})` returns the tools as `{name, description, parameters (JSON Schema), execute(args)}`.
-Before every commitment (an offer, an acceptance, a counter-offer, accepting a delivery with an IOU or a payment by
+Before every commitment (an offer, an acceptance, a counter-offer, accepting a delivery with a note or a payment by
 transfer, a guarantee offer, honoring or releasing a guarantee, loosening a limit) it calls
 `agent.prepare()`, as the Python MCP server and CLI do: one read of what would be signed gives both the arguments to
 sign with and the approval text. The text is built only from values checked against what is signed: the terms must

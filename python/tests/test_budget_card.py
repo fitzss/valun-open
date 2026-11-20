@@ -270,9 +270,9 @@ class CheckPayerTool(Card):
         self.assertNotIn('error', r)
 
     def test_the_summary_without_reasons_and_for_a_verdict_this_client_does_not_know(self):
-        self.assertEqual(va.check_summary({'verdict': 'accept', 'reasons': []}), "Accept: its owner's budget card allows this IOU.")
-        self.assertEqual(va.check_summary({'verdict': 'ask_owner'}), "Ask the payer\'s owner: the payer\'s owner approves an IOU this size before it binds.")
-        self.assertEqual(va.check_summary({'verdict': 'decline', 'reasons': None}), "Decline: its owner's budget card does not allow this IOU.")
+        self.assertEqual(va.check_summary({'verdict': 'accept', 'reasons': []}), "Accept: its owner's budget card allows this note.")
+        self.assertEqual(va.check_summary({'verdict': 'ask_owner'}), "Ask the payer\'s owner: the payer\'s owner approves a note this size before it binds.")
+        self.assertEqual(va.check_summary({'verdict': 'decline', 'reasons': None}), "Decline: its owner's budget card does not allow this note.")
         self.assertEqual(va.check_summary({'verdict': 'maybe', 'reasons': ['unsure']}), 'Unknown: unsure.')
         self.assertEqual(va.check_summary(None), 'Unknown: the server gave no verdict this client knows.')
         self.assertEqual(va.check_summary({'verdict': 'accept', 'reasons': [' within\nits budget.. ', 3, '', 'fine;']}),
@@ -286,7 +286,7 @@ class CheckPayerTool(Card):
             self.assertEqual(s('accept', covered), 'Accept: r.', covered)
         self.assertEqual(s('decline', 3), 'Decline: r.', 'a declined IOU would not be issued: its cover is not named')
         self.assertEqual(va.check_summary({'verdict': 'accept', 'cover': {'covered': 3}}),
-                         "Accept: its owner's budget card allows this IOU, backed for you up to 3.")
+                         "Accept: its owner's budget card allows this note, backed for you up to 3.")
 
     def test_the_new_decline_rules_read_as_other_declines(self):
         route = f'GET /pilot/v1/participants/{BOB}/check?amount=%d&payee={ME}'
@@ -342,7 +342,7 @@ class CheckPayerTool(Card):
 
     def test_the_description_tells_the_model_when_to_run_it(self):
         d = schemas.CHECK_PAYER['description']
-        self.assertTrue(d.startswith('Run this before you accept an IOU (a credit note) from an agent you do not know'))
+        self.assertTrue(d.startswith('Run this before you accept a note from an agent you do not know'))
         self.assertIn('Read-only', d)
         testnet = schemas.for_network(schemas.TESTNET)[-1]
         self.assertEqual(testnet['name'], 'valun_check_payer')

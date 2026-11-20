@@ -123,7 +123,7 @@ class BuiltInJobs(unittest.TestCase):
         self.assertEqual((exact['checked'], exact['exact_result_matches'], exact['differs_in']), (True, False, ['words']))
         self.assertEqual(out['delivery']['advice'], 'The delivered result does not match the exact result of the agreed '
                                                     'text (differs in: words). Dispute it with that reason instead of '
-                                                    'issuing an IOU.')
+                                                    'issuing a note.')
         self.assertNotIn('advice', deal(view(STATS, wrong, 'sandbox-mallory', role='payee'))['delivery'])
 
     def test_a_built_in_job_without_the_result_block_is_not_in_the_built_in_format(self):
@@ -134,7 +134,7 @@ class BuiltInJobs(unittest.TestCase):
                          (True, False, False, 'not in the built-in format: the delivery has no ```json result block to compare'))
         self.assertEqual(out['delivery']['advice'], 'The delivery is not in the built-in format: it has no ```json result '
                                                     'block to compare with the exact result of the agreed text. Dispute it '
-                                                    'with that reason instead of issuing an IOU.')
+                                                    'with that reason instead of issuing a note.')
         self.assertEqual(va.exact_facts(terms(STATS), PLAIN_ANSWER, 'sandbox-exact'),
                          ['exact result: not in the built-in format (no ```json result block)'])
         self.assertNotIn('differs in', json.dumps(out['delivery']))
@@ -159,16 +159,16 @@ def issued(role='payer', confirmation='local_only', **extra):
 
 
 class PlainEnding(unittest.TestCase):
-    PAYER = ("You owe basis-fj-b 2000000 nanoERG (0.002 tERG) more by this deal's IOU (the tracker's running total for "
+    PAYER = ("You owe basis-fj-b 2000000 nanoERG (0.002 tERG) more by this deal's note (the tracker's running total for "
              "that pair: 5000000 nanoERG (0.005 tERG)). Where it stands: local_only, recorded by the tracker; no tracker "
              'box on Ergo testnet commits it yet. The tracker posts one tracker box at a time, at most 50 a UTC day: the '
              'next one commits it, usually within 15 minutes of a change, as measured on the testnet, and once the '
              "day's 50 are used up, only after 00:00 UTC. The confirmation then reads pending, then confirmed. Check it: the "
              f'row from you to basis-fj-b in GET {SERVER}/pilot/v1/ledger (its total and confirmation), and `valun audit '
              '--mine`, which checks your records against the box once the next box commits them. It stays outstanding '
-             'until a loop clears it (a set-off around a cycle of debts), basis-fj-b passes it on (pays another agent '
-             'with it, which changes only whom you owe), or basis-fj-b redeems it on Ergo testnet against your reserve, '
-             'if you post one.')
+             'until a loop clears it (a set-off around a loop of notes: it clears, and settles nothing), basis-fj-b passes '
+             'it on (pays another agent with it, which changes only whom you owe), or basis-fj-b can redeem it for tERG on '
+             'Ergo testnet only against a reserve you lock under the key that signed it, once a tracker box commits it.')
 
     def test_valun_deal_opens_with_the_ending_for_both_sides(self):
         out = deal(issued())
@@ -177,16 +177,20 @@ class PlainEnding(unittest.TestCase):
         self.assertEqual(out['credit_note']['confirmation_means'], va.CONFIRMATION_WORDS['local_only'])
         theirs = deal(issued('payee', 'confirmed'))
         self.assertTrue(theirs['summary'].startswith("basis-fj-a owes you 2000000 nanoERG (0.002 tERG) more by this deal's "
-                                                     'IOU'), theirs['summary'])
+                                                     'note'), theirs['summary'])
         for words in ('Where it stands: confirmed, a confirmed tracker box on Ergo testnet commits it.',
                       f'the row from basis-fj-a to you in GET {SERVER}/pilot/v1/ledger',
                       'you pass it on (pay_with when you accept a delivery, which changes only whom basis-fj-a owes)',
-                      "or you redeem it on Ergo testnet against basis-fj-a's reserve, if it posts one."):
+                      'or you can redeem it for tERG on Ergo testnet only against a reserve basis-fj-a locks under the '
+                      'key that signed it, once a tracker box commits it.'):
             self.assertIn(words, theirs['summary'])
         # without circulating credit: no loop and nothing passed on, only redemption
         plain = deal(issued(), features=())
-        self.assertTrue(plain['summary'].endswith('It stays outstanding until basis-fj-b redeems it on Ergo testnet '
-                                                  'against your reserve, if you post one.'), plain['summary'])
+        self.assertTrue(plain['summary'].endswith('It stays outstanding until basis-fj-b can redeem it for tERG on Ergo '
+                                                  'testnet only against a reserve you lock under the key that signed it, '
+                                                  'once a tracker box commits it.'), plain['summary'])
+        for words in ('IOU', 'credit note', 'debt', "'s reserve"):          # fix inbox #177
+            self.assertNotIn(words, out['summary'] + theirs['summary'] + plain['summary'])
         self.assertNotIn('summary', deal(view(WORD_STATS, PLAIN_ANSWER, 'basis-fj-b')))
 
     def test_the_servers_own_summary_comes_first_when_it_sends_one(self):
@@ -216,12 +220,12 @@ class PlainEnding(unittest.TestCase):
         out = Agent(FakeClient(box=box)).call('valun_inbox', {})
         rows = out['recent_closed']
         self.assertEqual([list(x)[0] for x in rows], ['summary', 'summary', 'deal_id'])
-        self.assertEqual(rows[0]['summary'], 'Paid with your IOU: this deal added 2000000 nanoERG (0.002 tERG) to what you '
+        self.assertEqual(rows[0]['summary'], 'Paid with your note: this deal added 2000000 nanoERG (0.002 tERG) to what you '
                                              'owe basis-fj-b. valun_deal shows where it stands on the tracker and how it '
-                                             'is paid back.')
-        self.assertEqual(rows[1]['summary'], 'basis-fj-a paid with its IOU: this deal added 2000000 nanoERG (0.002 tERG) '
+                                             'can be cleared, passed on or redeemed.')
+        self.assertEqual(rows[1]['summary'], 'basis-fj-a paid with its note: this deal added 2000000 nanoERG (0.002 tERG) '
                                              'to what basis-fj-a owes you. valun_deal shows where it stands on the tracker '
-                                             'and how it is paid back.')
+                                             'and how it can be cleared, passed on or redeemed.')
         self.assertEqual(out['respond'], [])
 
     def test_every_confirmation_is_explained_on_the_testnet_and_the_pilot(self):

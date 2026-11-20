@@ -331,7 +331,7 @@ def _issued_in(state, create=True):
             return {}
         r = state['issued'] = {}
     if not isinstance(r, dict):
-        raise ValunError('records_unreadable', "this profile's record of issued credit notes cannot be read; nothing was signed")
+        raise ValunError('records_unreadable', "this profile's record of the notes it issued cannot be read; nothing was signed")
     return r
 
 
@@ -2371,7 +2371,7 @@ class Client:
         else:
             known = self._known_total(pair)
             if known is not None and known != P:
-                raise ValunError('ledger_mismatch', f'the server says you have issued this creditor {P} {self.unit} of credit notes so far; your own record says {known}. Ask your operator.')
+                raise ValunError('ledger_mismatch', f'the server says the notes you issued this creditor total {P} {self.unit} so far; your own record says {known}. Ask your operator.')
         op, signed_at = 'guarantee_note:' + cid, _iso(datetime.now(timezone.utc))
         slots = {nv.slot_key(pair, 'new'): total}
         if bound:
@@ -2387,7 +2387,7 @@ class Client:
             if not bound:
                 problem = nv.unbound_note_problem(pair, state.get('novated_edges'), features)
                 if problem:
-                    raise ValunError(problem, 'a novation changed this edge, so it takes bound credit notes only; nothing was signed'
+                    raise ValunError(problem, 'a novation changed this edge, so it takes bound notes only; nothing was signed'
                                      if problem == 'bound_note_required' else "this profile's record of novated edges cannot be read; nothing was signed")
             honors = _dict_in(state, GUARANTEE_HONORS_KEY)
             rec = honors.get(guarantee_id) if isinstance(honors.get(guarantee_id), dict) else {}
@@ -2633,7 +2633,7 @@ class Client:
             raise ValunError('bad_template', 'credit-note template timestamp is not current')
         if features and tpl['timestamp'] % 1000 >= RESERVED_MS_FROM:
             raise ValunError('bad_template', (f"credit-note template timestamp {tpl['timestamp']} ends in {tpl['timestamp'] % 1000}: "
-                                              'the tracker keeps residues 995-999 for other operations; refusing to sign it as a credit note'))
+                                              'the tracker keeps residues 995-999 for other operations; refusing to sign it as a note'))
         self._secret()
         note = {'total': tpl['total'], 'timestamp': tpl['timestamp']}
         agreed = {'tracker_nft_id': nft, 'denomination': denom}
@@ -2646,7 +2646,7 @@ class Client:
             # R12: an edge a novation changed takes bound notes only. D-1: one live payment attempt per deal.
             problem = nv.unbound_note_problem(pair, state.get('novated_edges'), features)
             if problem == 'bound_note_required':
-                raise ValunError(problem, 'a novation changed this edge, so it takes bound credit notes only, and this server '
+                raise ValunError(problem, 'a novation changed this edge, so it takes bound notes only, and this server '
                                           'offers none; nothing was signed')
             if problem:
                 raise ValunError(problem, "this profile's record of novated edges cannot be read; nothing was signed")
@@ -2690,7 +2690,7 @@ class Client:
                 if a['edge'] == pair:
                     shown, mine = a['shown'], a['recorded']
                     return _refused(r, 'ledger_mismatch', (
-                        f"the server shows an older prior credit note to this payee ({shown['total']} {self.unit} at {shown['timestamp']}) "
+                        f"the server shows an older prior note to this payee ({shown['total']} {self.unit} at {shown['timestamp']}) "
                         f"than your own record ({mine['total']} {self.unit} at {mine['timestamp']}). Ask your operator."))
             return None
         r = self._decide(lambda state, edges: nv.evaluate_bound_template(tpl, self._ctx(
@@ -2847,12 +2847,12 @@ class Client:
             self._confirm_issued(pair, payee, verify, deal_id, d)
         known = self._known_total(pair)
         if known is not None and known != tpl['prior_total']:
-            raise ValunError('ledger_mismatch', f"the server says you have issued this payee {tpl['prior_total']} {self.unit} of credit notes so far; your own record says {known}. Ask your operator.")
+            raise ValunError('ledger_mismatch', f"the server says the notes you issued this payee total {tpl['prior_total']} {self.unit} so far; your own record says {known}. Ask your operator.")
         for p in self._pending_notes(pair, deal_id):
             # Still pending, so neither its deal nor the edge shows its outcome. If the edge has reached its total, it may
             # have applied (an owner approved it after this client signed): paying the deal again could pay it twice.
             if isinstance(p.get('total'), int) and not isinstance(p['total'], bool) and tpl['prior_total'] >= p['total']:
-                raise ValunError('already_paid', (f"your earlier credit note for this deal ({p['total']} {self.unit} in total to this payee) may "
+                raise ValunError('already_paid', (f"your earlier note for this deal ({p['total']} {self.unit} in total to this payee) may "
                                                   f"already be on the tracker: the edge's total is {tpl['prior_total']} {self.unit} now. Refusing "
                                                   'to pay it again. Ask your operator.'))
 
@@ -2894,7 +2894,7 @@ class Client:
         """A note of mine that applied paid its own deal: never sign a second payment for it, whatever the server says."""
         for p in applied:
             if p.get('kind') == 'note' and p.get('ref') == deal_id:
-                raise ValunError('already_paid', (f"your credit note for this deal ({p.get('total')} {unit}) is already on the tracker, so "
+                raise ValunError('already_paid', (f"your note for this deal ({p.get('total')} {unit}) is already on the tracker, so "
                                                   'the deal is paid; refusing to pay it again. Ask your operator.'))
 
     @staticmethod

@@ -791,7 +791,7 @@ function issuedIn(state, create = true) {
     state.issued = {};
     return state.issued;
   }
-  if (!isDict(r)) throw new ValunError('records_unreadable', "this profile's record of issued credit notes cannot be read; nothing was signed");
+  if (!isDict(r)) throw new ValunError('records_unreadable', "this profile's record of the notes it issued cannot be read; nothing was signed");
   return r;
 }
 
@@ -1825,7 +1825,7 @@ export class Client {
     } else {
       const known = this.#knownTotal(pair);
       if (known !== null && known !== P) {
-        throw new ValunError('ledger_mismatch', `the server says you have issued this creditor ${P} ${this.unit} of credit notes so far; your own record says ${str(known)}. Ask your operator.`);
+        throw new ValunError('ledger_mismatch', `the server says the notes you issued this creditor total ${P} ${this.unit} so far; your own record says ${str(known)}. Ask your operator.`);
       }
     }
     const op = 'guarantee_note:' + cid, signedAt = isoSeconds(this.#now());
@@ -1841,7 +1841,7 @@ export class Client {
       if (!bound) {
         const problem = nv.unboundNoteProblem(pair, state.novated_edges ?? null, features);
         if (problem) {
-          throw new ValunError(problem, problem === 'bound_note_required' ? 'a novation changed this edge, so it takes bound credit notes only; nothing was signed'
+          throw new ValunError(problem, problem === 'bound_note_required' ? 'a novation changed this edge, so it takes bound notes only; nothing was signed'
             : "this profile's record of novated edges cannot be read; nothing was signed");
         }
       }
@@ -2208,7 +2208,7 @@ export class Client {
     }
     if (features.length && tpl.timestamp % 1000 >= RESERVED_MS_FROM) {
       throw new ValunError('bad_template', `credit-note template timestamp ${tpl.timestamp} ends in ${tpl.timestamp % 1000}: `
-        + 'the tracker keeps residues 995-999 for other operations; refusing to sign it as a credit note');
+        + 'the tracker keeps residues 995-999 for other operations; refusing to sign it as a note');
     }
     // Recompute the 80-byte message from the checked values; never sign the template's message_hex.
     let msg;
@@ -2227,7 +2227,7 @@ export class Client {
       // R12: an edge a novation changed takes bound notes only. D-1: one live payment attempt per deal.
       const problem = nv.unboundNoteProblem(pair, state.novated_edges ?? null, features);
       if (problem === 'bound_note_required') {
-        throw new ValunError(problem, 'a novation changed this edge, so it takes bound credit notes only, and this server '
+        throw new ValunError(problem, 'a novation changed this edge, so it takes bound notes only, and this server '
           + 'offers none; nothing was signed');
       }
       if (problem) throw new ValunError(problem, "this profile's record of novated edges cannot be read; nothing was signed");
@@ -2265,7 +2265,7 @@ export class Client {
       for (const a of r.summary.advisories) {
         if (a.edge === pair) {
           const shown = a.shown, mine = a.recorded;
-          return refused(r, 'ledger_mismatch', `the server shows an older prior credit note to this payee (${shown.total} ${this.unit} at `
+          return refused(r, 'ledger_mismatch', `the server shows an older prior note to this payee (${shown.total} ${this.unit} at `
             + `${shown.timestamp}) than your own record (${mine.total} ${this.unit} at ${mine.timestamp}). Ask your operator.`);
         }
       }
@@ -2425,14 +2425,14 @@ export class Client {
     }
     const now = this.#knownTotal(pair);
     if (now !== null && !pyEq(now, tpl.prior_total)) {
-      throw new ValunError('ledger_mismatch', `the server says you have issued this payee ${tpl.prior_total} ${this.unit} of credit notes so far; your own record says ${str(now)}. Ask your operator.`);
+      throw new ValunError('ledger_mismatch', `the server says the notes you issued this payee total ${tpl.prior_total} ${this.unit} so far; your own record says ${str(now)}. Ask your operator.`);
     }
     for (const p of this.#pendingNotes(pair, dealId)) {
       // Still pending, so neither its deal nor the edge shows its outcome. If the edge has reached its total, it may have
       // applied (an owner approved it after this client signed): paying the deal again could pay it twice.
       const total = pyGet(p, 'total');
       if (typeof total === 'number' && Number.isSafeInteger(total) && tpl.prior_total >= total) {
-        throw new ValunError('already_paid', `your earlier credit note for this deal (${total} ${this.unit} in total to this payee) may `
+        throw new ValunError('already_paid', `your earlier note for this deal (${total} ${this.unit} in total to this payee) may `
           + `already be on the tracker: the edge's total is ${tpl.prior_total} ${this.unit} now. Refusing `
           + 'to pay it again. Ask your operator.');
       }
@@ -2483,7 +2483,7 @@ export class Client {
   static #refusePaidAgain(dealId, applied, unit = UNIT) {
     for (const p of applied) {
       if (pyGet(p, 'kind') === 'note' && pyGet(p, 'ref') === dealId) {
-        throw new ValunError('already_paid', `your credit note for this deal (${str(pyGet(p, 'total'))} ${unit}) is already on the tracker, so `
+        throw new ValunError('already_paid', `your note for this deal (${str(pyGet(p, 'total'))} ${unit}) is already on the tracker, so `
           + 'the deal is paid; refusing to pay it again. Ask your operator.');
       }
     }

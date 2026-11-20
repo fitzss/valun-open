@@ -101,58 +101,71 @@ export const REAL_VS_SIMULATED_CIRCULATION = Object.freeze({
   not_proven: REAL_VS_SIMULATED.not_proven,
 });
 // The same labels on the Valun testnet network (valun-testnet-1): word for word the server's testnet deal labels
-// (lib/pilot/core.mjs SETTLEMENT_TESTNET, CIRCULATION_SETTLEMENT_TESTNET). There a creditor can redeem a note on Ergo
-// testnet against its issuer's reserve, the tracker anchors its totals on Ergo testnet, and tERG have no monetary value.
-// A netting is committed by the next tracker box, not final: it stays committed only as long as the tracker key never
-// commits an earlier total again (valun-app e18eb73, the server's label since Nov 16; fix inbox #85, #100, #136 item 7;
-// skill.md, Trust model).
+// (lib/pilot/core.mjs SETTLEMENT_TESTNET, CIRCULATION_SETTLEMENT_TESTNET, TESTNET_REDEMPTION; "note" since valun-app
+// 37693d5, fix inbox #173, and in the client since 0.7.3, #177). There a holder can redeem a note on Ergo testnet only
+// against a tERG reserve locked under the key that signed it, the tracker commits its totals on Ergo testnet, and tERG
+// have no monetary value. A netting is committed by the next tracker box, not final: it stays committed only as long as
+// the tracker key never commits an earlier total again (valun-app e18eb73, the server's label since Nov 16; fix inbox
+// #85, #100, #136 item 7; skill.md, Trust model). The pilot's labels above keep their words: the server's own pilot labels
+// still say them, and a local server runs the pilot network.
 export const TESTNET = 'valun-testnet-1';
-export const TESTNET_REDEMPTION = "Its creditor can redeem it on Ergo testnet against the issuer's tERG reserve, if the issuer posted "
-  + 'one; tERG are test coins with no monetary value.';
-export const SETTLEMENT_TESTNET = 'not settled until redeemed: issuing a credit note creates an outstanding obligation. ' + TESTNET_REDEMPTION;
-export const CIRCULATION_SETTLEMENT_TESTNET = 'not settled until redeemed: a credit note is an outstanding obligation. With circulating '
-  + 'credit it can move to a new creditor (debt transfer, signed by the debtor and both '
-  + 'creditors) or be cancelled against an equal opposite obligation (set-off, signed by every '
-  + 'party; no net position changes); a netting is committed once a tracker box on Ergo testnet '
-  + 'commits it, and stays committed only as long as the tracker key never commits an earlier total again. '
+export const TESTNET_REDEMPTION = 'Its holder can redeem it on Ergo testnet against a tERG reserve locked under the key that signed it, '
+  + 'if one was posted; tERG are test coins with no monetary value.';
+export const SETTLEMENT_TESTNET = 'not settled until redeemed: issuing a note creates a promise to pay that stays outstanding. ' + TESTNET_REDEMPTION;
+export const CIRCULATION_SETTLEMENT_TESTNET = 'not settled until redeemed: a note is a promise to pay that stays outstanding. With '
+  + 'circulating credit it can move to a new holder (a transfer, signed by its issuer and both '
+  + 'holders) or be cleared in a loop of notes (set-off, signed by every party; no net position '
+  + 'changes); a netting is committed once a tracker box on Ergo testnet commits it, and stays '
+  + 'committed only as long as the tracker key never commits an earlier total again. '
   + TESTNET_REDEMPTION;
 const TESTNET_TRACKER = 'The Valun testnet Basis tracker keeps one running total per key pair: what the issuer key owes the '
   + 'recipient key, with a timestamp, signed by the issuer, and anchors them on Ergo testnet (a tracker box '
   + 'commits the digest of every total). ';
-const TESTNET_BACKING = "A note is backed only by its issuer's reserve on Ergo testnet, if the issuer posted one.";
+const TESTNET_BACKING = 'A note is backed only by a tERG reserve locked on Ergo testnet under the key that signed it, if one was '
+  + 'posted, and only up to what that reserve holds; most notes have none.';
+export const THIRD_PARTY_TESTNET = 'Supported: paying a third party with your OWN note; the third party may require that your claims on '
+  + 'the tracker cover it (min_payer_coverage_pct). Not supported: transferring, assigning or endorsing '
+  + 'a note you hold to someone else, and clearing or netting between participants.';
+export const PAY_THIRD_PARTY_TESTNET = 'Supported: paying a third party with your OWN note, or with a note you hold (pay_with: that much '
+  + 'of what its issuer owes you moves to the payee; the issuer, you and the payee each sign, and what '
+  + 'the issuer owes in all does not change), and set-offs that clear a loop of notes (every party '
+  + 'signs; no net position changes). A payee may require that the claims of whoever issued the note '
+  + 'it receives cover it (min_payer_coverage_pct). ';
 export const HONEST_LABELS_TESTNET = Object.freeze({
-  what_basis_records: TESTNET_TRACKER + 'A credit note raises a total. ' + TESTNET_BACKING,
+  what_basis_records: TESTNET_TRACKER + 'A note raises a total. ' + TESTNET_BACKING,
   outstanding_promise: SETTLEMENT_TESTNET,
-  third_party: HONEST_LABELS.third_party,
+  third_party: THIRD_PARTY_TESTNET,
 });
 export const HONEST_LABELS_CIRCULATION_TESTNET = Object.freeze({
-  what_basis_records: TESTNET_TRACKER + 'A credit note raises a total; with circulating credit a debt transfer moves '
-    + 'part of it to a new creditor and a set-off lowers the totals around a cycle, each signed by every '
-    + 'party whose total changes. ' + TESTNET_BACKING,
+  what_basis_records: TESTNET_TRACKER + 'A note raises a total; with circulating credit a transfer moves part of it to '
+    + 'a new holder and a set-off lowers the totals around a loop of notes, each signed by every party '
+    + 'whose total changes. ' + TESTNET_BACKING,
   outstanding_promise: CIRCULATION_SETTLEMENT_TESTNET,
-  third_party: PAY_THIRD_PARTY_CIRCULATION + "A creditor redeems a note only against its issuer's reserve on Ergo testnet, in tERG.",
+  third_party: PAY_THIRD_PARTY_TESTNET + 'A holder redeems a note only against a tERG reserve locked on Ergo testnet '
+    + 'under the key that signed it.',
 });
 export const REAL_VS_SIMULATED_TESTNET = Object.freeze({
-  real: "signatures by each participant's own key; Valun's acceptance and approval records; credit notes held by a "
-    + 'real Basis tracker (read back and reconciled by Valun) and anchored on Ergo testnet; reserves and '
-    + 'redemptions are Ergo testnet transactions',
+  real: "signatures by each participant's own key; Valun's acceptance and approval records; notes held by a real "
+    + 'Basis tracker (read back and reconciled by Valun) and committed on Ergo testnet by its tracker boxes '
+    + '(committed, not final); reserves and redemptions are Ergo testnet transactions',
   simulated: 'the value: tERG are Ergo testnet coins with no monetary value',
   not_proven: 'that delivered work is good (Valun records statements, it does not judge work); that any participant '
-    + 'will honour a credit note beyond its reserve',
+    + 'will pay a note beyond the reserve locked under the key that signed it',
 });
 export const REAL_VS_SIMULATED_CIRCULATION_TESTNET = Object.freeze({
-  real: "signatures by each participant's own key; Valun's acceptance and approval records; credit notes, debt "
-    + 'transfers and set-offs held by a real Basis tracker (read back and reconciled by Valun, and checked by your '
-    + 'client against the signatures) and anchored on Ergo testnet; reserves and redemptions are Ergo testnet '
-    + 'transactions',
+  real: "signatures by each participant's own key; Valun's acceptance and approval records; notes, transfers and "
+    + 'set-offs held by a real Basis tracker (read back and reconciled by Valun, and checked by your client against '
+    + 'the signatures) and committed on Ergo testnet by its tracker boxes (committed, not final); reserves and '
+    + 'redemptions are Ergo testnet transactions',
   simulated: REAL_VS_SIMULATED_TESTNET.simulated,
   not_proven: REAL_VS_SIMULATED_TESTNET.not_proven,
 });
 /** What a unit is, after its name (valun_status unit), and the last words of how to read the money view. */
 export const UNIT_WORDS = Object.freeze({PC: ' (pilot credits, no monetary value)', nanoERG: ' (of tERG: Ergo testnet coins with no monetary value)'});
 export const VALUE_WORDS = Object.freeze({PC: 'Nothing is redeemed and PC have no value.',
-  nanoERG: "A creditor can redeem a note on Ergo testnet against its issuer's reserve, if it has one; tERG "
-    + 'have no monetary value.'});
+  nanoERG: 'A note is settled only when its holder redeems it on Ergo testnet against a tERG reserve '
+    + 'locked under the key that signed it, if one was posted (GET /reserves); tERG have no monetary '
+    + 'value.'});
 export const CIRCULATION = 'circulation/1';
 /** processConsents() runs at most this often (state consents_last_run_ms; design 6.6). */
 export const CONSENTS_EVERY_MS = 60_000;
@@ -193,9 +206,9 @@ export const SANDBOX_MALLORY = 'sandbox-mallory';
 export const SANDBOX_AGENTS = Object.freeze([SANDBOX_EXACT, SANDBOX_MALLORY]);
 export const TOUR_GOALS = Object.freeze({
   1: 'Earn: sandbox-exact buys text-stats from you (the welcome job, 3 PC). Deliver the exact result; it pays with its '
-    + 'own credit note.',
+    + 'own note.',
   2: 'Spend a note you hold: buy notary from sandbox-mallory (2 PC) and pay with pay_with="sandbox-exact" (2 PC of '
-    + "sandbox-exact's debt to you move to sandbox-mallory). Dispute a wrong delivery and buy again.",
+    + 'what sandbox-exact owes you moves to sandbox-mallory). Dispute a wrong delivery and buy again.',
   3: 'Pay with your own note: buy notary from sandbox-exact (2 PC). Then the 2-cycle you -> sandbox-exact -> you (1 PC) '
     + 'is cleared by a set-off your Valun client signs by itself.',
   4: 'Sell: offer text-stats to sandbox-mallory (3 PC). It pays with its own note, and the 3-cycle sandbox-mallory -> '
@@ -232,10 +245,10 @@ export const TOUR_COMPLETED = 'The tour is complete. Deals with the sandbox agen
 /** The honest labels for a server with circulating credit (true) or without it: {settlement, not_settled, honest_labels, real_vs_simulated}. */
 export const BRIEF_NOTE = 'PC are pilot credits with no monetary value: a credit note is an outstanding promise, and nothing is redeemed. '
   + 'This is the brief view; call valun_status with brief=false for your mandate, consent policy and honest labels.';
-export const BRIEF_NOTE_TESTNET = 'Amounts are nanoERG of tERG, Ergo testnet coins with no monetary value: a credit note is an outstanding '
-  + "promise, which its creditor can redeem on Ergo testnet against the issuer's reserve, if it has one. "
-  + 'This is the brief view; call valun_status with brief=false for your mandate, consent policy and '
-  + 'honest labels.';
+export const BRIEF_NOTE_TESTNET = 'Amounts are nanoERG of tERG, Ergo testnet coins with no monetary value: a note is a promise to pay '
+  + 'that stays outstanding, which its holder can redeem on Ergo testnet only against a tERG reserve '
+  + 'locked under the key that signed it, if one was posted. This is the brief view; call valun_status '
+  + 'with brief=false for your mandate, consent policy and honest labels.';
 
 /**
  * valun_status: the guarantees waiting for this agent, from the inbox's guarantees section (fix inbox #18): offers to
@@ -254,7 +267,7 @@ export function guaranteesWaiting(g) {
   };
   if (!Object.values(out).some(v => v.length)) return null;
   out.how = "valun_guarantees shows each one. valun_respond_guarantee action='accept' or 'decline' answers an offer; "
-    + "action='honor' pays a call with your own credit note. valun_call_guarantee calls a due one, only if the "
+    + "action='honor' pays a call with your own note. valun_call_guarantee calls a due one, only if the "
     + 'issuer still owes you (callable_now).';
   return out;
 }
@@ -356,10 +369,10 @@ export function clientSigns(policy, unit = UNIT) {
   const upto = whole(cap) ? `, up to ${amountText(cap, unit)} each` : '';
   const out = [];
   if (truthy(get(policy, 'setoff'))) {
-    out.push(`set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change)${upto}`);
+    out.push(`set-offs that clear loops of notes you hold and issued (your net position does not change)${upto}`);
   }
-  if (truthy(get(policy, 'as_issuer'))) out.push(`debt transfers that move your own debt to a new creditor (your total owed does not change)${upto}`);
-  if (truthy(get(policy, 'as_new_creditor'))) out.push(`payments to you by debt transfer, of notes from issuers your owner accepts${upto}`);
+  if (truthy(get(policy, 'as_issuer'))) out.push(`transfers that move notes you issued to a new holder (what you owe in all does not change)${upto}`);
+  if (truthy(get(policy, 'as_new_creditor'))) out.push(`payments to you by transfer, of notes from issuers your owner accepts${upto}`);
   return out;
 }
 
@@ -436,7 +449,7 @@ export const UNKNOWN_PARTICIPANT_TEXT = 'Nothing was signed and your owner was n
  * What the Valun server never holds for an owner, in any approval mode (as the Python agent's NEVER_HELD; the approval
  * semantics of 2026-11-17): it holds only what the owner's mandate holds (approve_above, review_deliveries).
  */
-export const NEVER_HELD = 'honoring a guarantee call (your IOU, recorded at once); accepting, calling and releasing guarantees; '
+export const NEVER_HELD = 'honoring a guarantee call (your note, recorded at once); accepting, calling and releasing guarantees; '
   + 'deliveries, declines, withdrawals and disputes; loosening or clearing a limit you recorded with '
   + "valun_set_limits (never past your owner's mandate); and the consents your client signs by itself";
 /**
@@ -447,16 +460,16 @@ export const NEVER_HELD = 'honoring a guarantee call (your IOU, recorded at once
  */
 export const CONSOLE_APPROVALS = 'Console approvals: you sign every commitment yourself, and the Valun server holds these for your '
   + 'owner in the owner console until they approve: your offers and counter-offers, your acceptances '
-  + '(taking a job included), your guarantee offers, and the IOU or payment by transfer you sign when '
+  + '(taking a job included), your guarantee offers, and the note or payment by transfer you sign when '
   + 'you accept a delivery (console sets your owner mandate to approve_above 0 and review_deliveries '
   + 'on). Each takes effect only when your owner approves it. Rejecting does not unsign it: the server '
-  + 'keeps your signed offer, acceptance or IOU on record, and a rejected IOU could still be recorded by '
+  + 'keeps your signed offer, acceptance or note on record, and a rejected note could still be recorded by '
   + 'the tracker until an hour after you signed it, so paying that deal by transfer waits until 1 hour '
   + "and 2 minutes after you signed it (your Valun client's time, a minute after the server's, which the "
   + 'owner console shows, as a margin for clocks that differ). A rejected payment by transfer is the '
   + 'exception: it is deleted, '
   + 'its signatures included (the server keeps only their hashes), and you may pay again through the same '
-  + 'IOU at once while it is unchanged; any other payment of that deal waits until 1 hour and 2 minutes '
+  + 'note at once while it is unchanged; any other payment of that deal waits until 1 hour and 2 minutes '
   + 'after you signed it. When an answer says something waits for your owner, tell them at once: nothing '
   + 'else tells them. These are not held, so they take effect when you sign: ' + NEVER_HELD + '.';
 /**
@@ -465,7 +478,7 @@ export const CONSOLE_APPROVALS = 'Console approvals: you sign every commitment y
  */
 export const APPROVAL_TEXT = Object.freeze({
   ask: 'Before you sign a commitment, your owner is asked through this app and sees exactly what you would sign: an '
-    + 'offer, counter-offer or acceptance; accepting a delivery (with your own IOU, or paying with an IOU you '
+    + 'offer, counter-offer or acceptance; accepting a delivery (with your own note, or paying with a note you '
     + 'hold); a guarantee offer; honoring or releasing a guarantee; or loosening a limit you recorded. If they '
     + 'decline, nothing is signed.',
   'client-prompt': "Your app's own confirmation of each Valun tool that signs is the only approval here: whatever it "
@@ -559,7 +572,7 @@ export const ARGUMENT_WORDS = Object.freeze({
   price: 'the price: a whole number, at least 1',
   decision: 'accept or dispute',
   amount: "what it would owe you, the deal's price: a whole number, at least 1",
-  issuer: 'the handle or participant id of the agent whose debt you back',
+  issuer: 'the handle or participant id of the agent whose notes you guarantee',
   creditor: 'the handle or participant id of the agent you would pay',
   cap: 'the most you pay in all: a whole number, at least 1',
   due_in_hours: 'hours from now until the creditor can call: 0 for as soon as it accepts',
@@ -717,15 +730,15 @@ export function argumentRefusal(name, k, v, unit = UNIT) {
 // server gives no reasons; and the words for the payee's own side of the step (payee_side) when it would not simply go
 // ahead and the server gives no reasons for it. The Python core's.
 export const CHECK_LEAD = Object.freeze({accept: 'Accept', ask_owner: "Ask the payer's owner", decline: 'Decline'});
-export const CHECK_FALLBACK = Object.freeze({accept: "its owner's budget card allows this IOU",
-  ask_owner: "the payer's owner approves an IOU this size before it binds",
-  decline: "its owner's budget card does not allow this IOU"});
+export const CHECK_FALLBACK = Object.freeze({accept: "its owner's budget card allows this note",
+  ask_owner: "the payer's owner approves a note this size before it binds",
+  decline: "its owner's budget card does not allow this note"});
 export const CHECK_PAYEE_SIDE = Object.freeze({decline: 'your own limits refuse it', ask_owner: 'your owner approves it before it binds'});
 // Fix inbox #87: an ask_owner from a server that gives the step's verdict from both sides (payer_side): the summary's
 // first words, and its words without reasons, by whose owner decides first (checkOwners). The Python core's.
 export const CHECK_ASK_LEAD = Object.freeze({payee: 'Ask your owner', payer: "Ask the payer's owner", both: "Ask your owner and the payer's owner"});
 export const CHECK_ASK_FALLBACK = Object.freeze({payee: 'your owner approves it before it binds',
-  payer: "the payer's owner approves an IOU this size before it binds",
+  payer: "the payer's owner approves a note this size before it binds",
   both: "your owner and the payer's owner approve it before it binds"});
 /** A deal id as the server writes one (the offer under review, deal=; counted_offers). */
 const OFFER_ID = /^vd_[0-9a-f]{16}$/;
@@ -1064,7 +1077,7 @@ export function heldForOwner(mandate, server, unit = UNIT, console = false) {
     held.push(`your offers, counter-offers and acceptances priced above ${amountText(above, unit)}, and your `
       + 'guarantee offers capped above it (approve_above)');
   }
-  if (review) held.push('the IOU or payment by transfer you sign when you accept a delivery (review_deliveries is on)');
+  if (review) held.push('the note or payment by transfer you sign when you accept a delivery (review_deliveries is on)');
   const lead = console ? 'Your owner has changed your owner mandate since console set it: the Valun server holds '
     : 'The Valun server also holds ';
   if (!held.length) return lead + `nothing for your owner ${where} now.`;
@@ -1132,16 +1145,16 @@ export function ownerTurn(d, meId, nowMs = null) {
     }
     const [by, exp, passed] = heldNoteHour(d, nowMs);
     if (passed) {
-      return "your owner's: the IOU you signed when you accepted the delivery still waits for them, but the tracker "
+      return "your owner's: the note you signed when you accepted the delivery still waits for them, but the tracker "
         + `records it only until ${exp}, which has passed: tell your owner to reject it in the owner console `
         + '(approved now, it would fail at the tracker and leave the delivery accepted, unpaid and no longer '
-        + 'disputable), then accept the delivery again to sign a new IOU';
+        + 'disputable), then accept the delivery again to sign a new note';
     }
     if (exp) {
-      return "your owner's: the IOU you signed when you accepted the delivery waits for them in the owner console: "
+      return "your owner's: the note you signed when you accepted the delivery waits for them in the owner console: "
         + `they approve or reject it by ${deadlineWords(by, exp)}`;
     }
-    return "your owner's: the IOU or payment by transfer you signed when you accepted the delivery waits for them in "
+    return "your owner's: the note or payment by transfer you signed when you accepted the delivery waits for them in "
       + 'the owner console';
   }
   const acc = isDict(get(d, 'acceptance')) ? d.acceptance : {};
@@ -1253,25 +1266,25 @@ export function ownerDecisions(d, attempts = null) {
     } else if (kind === 'issue_note') {
       const bound = ts !== null && residue(ts) === nv.BOUND_MS && freeAfter(ts) !== null;
       if (!(latest && UNPAID.includes(st))) {
-        text = (state === 'rejected' ? `${earlier}your owner rejected the IOU you signed for this deal`
-          : `${earlier}the IOU you signed for this deal went void (${shown(state)})`) + `: it was never sent to the tracker.${moved}`;
+        text = (state === 'rejected' ? `${earlier}your owner rejected the note you signed for this deal`
+          : `${earlier}the note you signed for this deal went void (${shown(state)})`) + `: it was never sent to the tracker.${moved}`;
       } else {
         const heads = {
-          rejected: 'Your owner rejected the IOU you signed for this deal. The Valun server did not send it '
+          rejected: 'Your owner rejected the note you signed for this deal. The Valun server did not send it '
             + 'to the tracker, and you owe nothing for it.',
-          void_stale: "The IOU you signed for this deal went void when your owner approved it (void_stale): "
-            + "the pair's IOU or a party's key had changed since you signed it. The Valun server "
+          void_stale: "The note you signed for this deal went void when your owner approved it (void_stale): "
+            + "the pair's note or a party's key had changed since you signed it. The Valun server "
             + 'did not send it, and you owe nothing for it.',
-          void_key_revoked: 'The IOU you signed for this deal went void before your owner decided '
+          void_key_revoked: 'The note you signed for this deal went void before your owner decided '
             + "(void_key_revoked): a party's key was revoked. The Valun server did not send "
             + 'it, and you owe nothing for it.',
         };
         const head = Object.hasOwn(heads, state) ? heads[state]
-          : `The IOU you signed for this deal went void (${shown(state)}). The Valun server did not send it, `
+          : `The note you signed for this deal went void (${shown(state)}). The Valun server did not send it, `
             + 'and you owe nothing for it.';
         const steps = paySteps(st, st === 'delivered'
-          ? 'accept the delivery again to sign a new IOU (it waits for your owner again)'
-          : 'accept it again to sign a new IOU (it waits for your owner again)');
+          ? 'accept the delivery again to sign a new note (it waits for your owner again)'
+          : 'accept it again to sign a new note (it waits for your owner again)');
         const kept = state === 'rejected'
           ? ' The rejection did not unsign it: the server keeps it on record, and the tracker could still '
             + 'record it ' + (bound ? `until ${noteExpiresAt({timestamp: ts})}.`
@@ -1280,15 +1293,15 @@ export function ownerDecisions(d, attempts = null) {
         // This client's own waits where it holds a record of the IOU, else the server's (as the Python agent).
         const wait = bound ? `paying this deal by transfer waits until after ${freeAfter(ts)} (${MARGIN_WORDS})`
           : mine === null ? 'paying this deal by transfer waits until a little over an hour after you signed it, unless this '
-            + "pair's IOU moves past it first"
-            : "paying this deal by transfer waits until your client sees this pair's IOU move past it";
+            + "pair's note moves past it first"
+            : "paying this deal by transfer waits until your client sees this pair's note move past it";
         let count;
         if (counted) {
-          count = ' Your Valun client counts it as not applied: a new IOU of this deal may be signed now, and '
-            + wait + (bound ? ", or until your client sees this pair's IOU move past it." : '.');
+          count = ' Your Valun client counts it as not applied: a new note of this deal may be signed now, and '
+            + wait + (bound ? ", or until your client sees this pair's note move past it." : '.');
         } else if (mine !== null) {
           count = (bound ? ` ${wait[0].toUpperCase()}${wait.slice(1)}.` : '') + (bound
-            ? " Your Valun client still counts it as a payment that may apply: once this pair's IOU moves past "
+            ? " Your Valun client still counts it as a payment that may apply: once this pair's note moves past "
               + 'it, your client pays this deal no more until your owner resolves it (`valun attempts resolve`).'
             : ' Your Valun client still counts it as a payment that may apply (an ordinary note '
               + 'has no maximum age): it pays this deal by transfer no more until your owner resolves it '
@@ -1308,7 +1321,7 @@ export function ownerDecisions(d, attempts = null) {
           void_expired: 'Your payment by transfer expired before your owner decided (its hold ends 20 '
             + 'minutes after you sign it).',
           void_stale: 'Your payment by transfer went void when your owner approved it (void_stale): it was '
-            + "out of date (an IOU it moves, a party's key or a rule had changed since you signed "
+            + "out of date (a note it moves, a party's key or a rule had changed since you signed "
             + 'it).',
           void_key_revoked: 'Your payment by transfer went void before your owner decided '
             + "(void_key_revoked): a party's key was revoked.",
@@ -1317,14 +1330,14 @@ export function ownerDecisions(d, attempts = null) {
         const fallback = typeof get(pay, 'fallback_after') === 'string' ? pay.fallback_after : null;
         const free = ts !== null ? freeAfter(ts) : null;
         const other = free ? `after ${free} (${MARGIN_WORDS})` : fallback ? `after ${shown(fallback)}` : 'about an hour after you signed it';
-        const sooner = counted ? ', or once your client sees that IOU move past it'
-          : mine === null ? ' (or once that IOU moves past it)' : '';
+        const sooner = counted ? ', or once your client sees that note move past it'
+          : mine === null ? ' (or once that note moves past it)' : '';
         text = head + ' Nothing moved, and the Valun server deleted your signatures of it (it keeps only their '
-          + 'hashes).' + paySteps(st, 'pay again through the same IOU at once while it is unchanged (it '
-            + 'waits for your owner again), or with your own IOU or another IOU '
+          + 'hashes).' + paySteps(st, 'pay again through the same note at once while it is unchanged (it '
+            + 'waits for your owner again), or with your own note or another note '
             + `${other}${sooner}`)
           + (counted ? ' Your Valun client counts it as not applied.'
-            : mine !== null ? ' Your Valun client still counts it as a payment that may apply: once that IOU moves past it, '
+            : mine !== null ? ' Your Valun client still counts it as a payment that may apply: once that note moves past it, '
               + 'your client pays this deal no more until your owner resolves it (`valun attempts resolve`).' : '');
       }
     } else if (kind === 'guarantee_offer') {
@@ -1387,14 +1400,14 @@ export function counterpartyOwnerDecisions(d, meId) {
         + 'owed.';
     } else if (kind === 'issue_note') {
       if (latest && ['delivered', 'payment_due'].includes(st)) {
-        text = (isVoid ? `The IOU ${cp}'s agent signed for your delivery went void when its owner approved it (it was out `
-          + 'of date).' : `${lead}'s owner rejected the IOU its agent signed for your delivery.`)
+        text = (isVoid ? `The note ${cp}'s agent signed for your delivery went void when its owner approved it (it was out `
+          + 'of date).' : `${lead}'s owner rejected the note its agent signed for your delivery.`)
           + ` Nothing reached the tracker, and ${cp} owes you nothing for this deal yet. `
           + (st === 'delivered' ? `The deal is back to delivered: ${cp}'s agent may accept it again or dispute it.`
             : `The delivery stays accepted: ${cp} must still pay it.`);
       } else {
-        text = (isVoid ? `${earlier}the IOU ${cp}'s agent signed for your delivery went void when its owner approved it`
-          : `${earlier}${cp}'s owner rejected the IOU its agent signed for your delivery`) + `; nothing reached the tracker.${moved}`;
+        text = (isVoid ? `${earlier}the note ${cp}'s agent signed for your delivery went void when its owner approved it`
+          : `${earlier}${cp}'s owner rejected the note its agent signed for your delivery`) + `; nothing reached the tracker.${moved}`;
       }
     } else {                                     // pay_by_transfer
       const what = isVoid ? 'went void when its owner approved it (it was out of date)'
@@ -1444,10 +1457,10 @@ export function quoteLine(label, fields) {
 export function owes(role, who, price, unit = UNIT, circulating = false) {
   const p = amountText(price, unit);
   if (role === 'payer' && circulating === true) {
-    return `after you accept their delivery you will pay ${who} ${p}: with your credit note, or with notes you hold if you choose to.`;
+    return `after you accept their delivery you will pay ${who} ${p}: with your own note, or with notes you hold if you choose to.`;
   }
-  return role === 'payer' ? `after you accept their delivery you will owe ${who} ${p} (your credit note).`
-    : `you must deliver; ${who} would then owe you ${p} (their credit note).`;
+  return role === 'payer' ? `after you accept their delivery you will owe ${who} ${p} (your note).`
+    : `you must deliver; ${who} would then owe you ${p} (their note).`;
 }
 
 /** The tracker a credit note goes to, in an approval text. */
@@ -1514,6 +1527,19 @@ const DIRECTORY_PAGE = 10, DIRECTORY_PAGE_MAX = 50, DIRECTORY_TEXT_MAX = 160;
  */
 function directoryText(v) {
   return typeof v === 'string' && cpLength(v) > DIRECTORY_TEXT_MAX ? cpSlice(v, DIRECTORY_TEXT_MAX) + '…' : v;
+}
+
+// valun_directory's label of an agent the server runs, in the server's own A2A words (lib/a2a.mjs PRACTICE_WORDS,
+// HOUSE_WORDS): which practice agent it is, and that a house agent runs on a shared AI budget and may decline (fix inbox
+// #177 item 6). As the Python agent's.
+export const DIRECTORY_LABELS = Object.freeze({[SANDBOX_EXACT]: 'practice agent, operator-run; always exact, the one to try first',
+  [SANDBOX_MALLORY]: 'practice agent, operator-run; wrong on purpose about half the time, for trying a dispute'});
+export const HOUSE_LABEL = 'house agent, operator-run; Claude on a shared daily and monthly budget, so it may decline';
+/** The label valun_directory gives a directory entry: a practice agent's (operator_run) or a house agent's (house_agent), else null. */
+export function directoryLabel(p) {
+  const h = get(p, 'handle');
+  if (get(p, 'operator_run') === true && typeof h === 'string' && Object.hasOwn(DIRECTORY_LABELS, h)) return DIRECTORY_LABELS[h];
+  return get(p, 'house_agent') === true ? HOUSE_LABEL : null;
 }
 
 /**
@@ -1593,7 +1619,7 @@ export function noteSummary(d, network = NETWORK, unit = UNIT, circulating = fal
   const who = typeof get(cp, 'handle') === 'string' && cp.handle ? shown(cp.handle) : 'the other party';
   const payer = (role || get(d, 'your_role')) === 'payer';
   const amt = whole(amount) ? amountText(amount, unit) : 'the price';
-  let out = payer ? `You owe ${who} ${amt} more by this deal's IOU` : `${who} owes you ${amt} more by this deal's IOU`;
+  let out = payer ? `You owe ${who} ${amt} more by this deal's note` : `${who} owes you ${amt} more by this deal's note`;
   const total = get(tn, 'amount_collected');
   out += whole(total) ? ` (the tracker's running total for that pair: ${amountText(total, unit)}).` : '.';
   const conf = or(get(n, 'confirmation'), get(tn, 'confirmation'));
@@ -1604,12 +1630,15 @@ export function noteSummary(d, network = NETWORK, unit = UNIT, circulating = fal
       : ' Where it stands: the tracker recorded it, and a tracker box on Ergo testnet commits it.';
     out += ` Check it: ${row} (its total and confirmation), and \`valun audit --mine\`, which checks your records `
       + 'against the box once the next box commits them.';
-    const redeem = payer ? `${who} redeems it on Ergo testnet against your reserve, if you post one`
-      : `you redeem it on Ergo testnet against ${who}'s reserve, if it posts one`;
+    const redeem = payer ? `${who} can redeem it for tERG on Ergo testnet only against a reserve you lock under the key that `
+        + 'signed it, once a tracker box commits it'
+      : `you can redeem it for tERG on Ergo testnet only against a reserve ${who} locks under the key that `
+        + 'signed it, once a tracker box commits it';
     if (circulating) {
       const passes = payer ? `${who} passes it on (pays another agent with it, which changes only whom you owe)`
         : `you pass it on (pay_with when you accept a delivery, which changes only whom ${who} owes)`;
-      out += ` It stays outstanding until a loop clears it (a set-off around a cycle of debts), ${passes}, or ${redeem}.`;
+      out += ' It stays outstanding until a loop clears it (a set-off around a loop of notes: it clears, and settles '
+        + `nothing), ${passes}, or ${redeem}.`;
     } else {
       out += ` It stays outstanding until ${redeem}.`;
     }
@@ -1642,9 +1671,9 @@ export function closedSummary(x) {
   const amt = whole(amount) && typeof unit === 'string' && unit ? amountText(amount, unit) : 'its price';
   const cp = get(x, 'counterparty');
   const who = typeof cp === 'string' && cp ? shown(cp) : 'the other party';
-  const lead = get(x, 'your_role') === 'payer' ? `Paid with your IOU: this deal added ${amt} to what you owe ${who}.`
-    : `${who} paid with its IOU: this deal added ${amt} to what ${who} owes you.`;
-  return lead + ' valun_deal shows where it stands on the tracker and how it is paid back.';
+  const lead = get(x, 'your_role') === 'payer' ? `Paid with your note: this deal added ${amt} to what you owe ${who}.`
+    : `${who} paid with its note: this deal added ${amt} to what ${who} owes you.`;
+  return lead + ' valun_deal shows where it stands on the tracker and how it can be cleared, passed on or redeemed.';
 }
 
 /**
@@ -1655,11 +1684,11 @@ export function closedSummary(x) {
 export function exactAdvice(exact) {
   if (get(exact, 'built_in_format') === false) {
     return 'The delivery is not in the built-in format: it has no ```json result block to compare with the exact '
-      + 'result of the agreed text. Dispute it with that reason instead of issuing an IOU.';
+      + 'result of the agreed text. Dispute it with that reason instead of issuing a note.';
   }
   return 'The delivered result does not match the exact result of the agreed text '
     + `(differs in: ${iterate(or(get(exact, 'differs_in'), ['the result block'])).map(k => str(k)).join(', ')}). `
-    + 'Dispute it with that reason instead of issuing an IOU.';
+    + 'Dispute it with that reason instead of issuing a note.';
 }
 
 /**
@@ -1923,7 +1952,7 @@ export function errorPayload(e, setupHint = DEFAULT_SETUP_HINT) {
         + 'Nothing was signed. Tell your owner.';
     }
     if (e.code === 'already_paid') {
-      out.what_this_means = 'Your earlier credit note for this deal is (or may already be) on the tracker, so the deal '
+      out.what_this_means = 'Your earlier note for this deal is (or may already be) on the tracker, so the deal '
         + 'counts as paid. Nothing was signed. Do not try to pay it again; tell your owner.';
     }
     if (e.code === 'mandate_exceeded') {
@@ -1966,7 +1995,7 @@ export function errorPayload(e, setupHint = DEFAULT_SETUP_HINT) {
     if (e.code === 'feature_unavailable') {
       out.what_this_means = 'This Valun server does not offer circulating credit (paying with notes you hold, '
         + 'set-offs), or not on the tracker contract your client signs for (tracker v3.2). '
-        + 'Nothing was signed. Pay with your own credit note (leave pay_with out); if that fails '
+        + 'Nothing was signed. Pay with your own note (leave pay_with out); if that fails '
         + 'too, tell your owner: the server must run tracker v3.2.';
     }
     if (e.code === 'unknown_issuer') {
@@ -2760,15 +2789,15 @@ export class ValunAgent {
     const [cap, due, window, honor, ttl] = [['cap', null], ['due_in_hours', null], ['callable_for_hours', 168], ['honor_within_hours', 24],
       ['offer_valid_hours', 24]].map(([k, d]) => guaranteeInt(a, k, d));
     return [
-      `Valun - sign a GUARANTEE: back what ${issuer} (${shown(item(snap.issuer, 'id'))}) owes ${creditor} (${shown(item(snap.creditor, 'id'))}):`,
+      `Valun - sign a GUARANTEE of what ${issuer} (${shown(item(snap.issuer, 'id'))}) owes ${creditor} (${shown(item(snap.creditor, 'id'))}):`,
       (Array.isArray(get(a, 'deals')) && get(a, 'deals').length
         ? `  you pay ${creditor} up to ${amountText(cap, u)} in all, for what ${issuer} still owes it for the deals `
-          + `${get(a, 'deals').map(d => shown(d)).join(', ')} after ${due} h from now (debt from any other deal is not covered),`
+          + `${get(a, 'deals').map(d => shown(d)).join(', ')} after ${due} h from now (what it owes for any other deal is not covered),`
         : `  you pay ${creditor} up to ${amountText(cap, u)} in all, for what ${issuer} still owes it after ${due} h from now `
-          + '(any debt to it, also new debt: the cap is your exposure),'),
-      `  if ${creditor} calls in the ${window} h after that; you pay a call within ${honor} h, with your own credit note`,
+          + '(anything it owes it, also what it comes to owe later: the cap is your exposure),'),
+      `  if ${creditor} calls in the ${window} h after that; you pay a call within ${honor} h, with your own note`,
       `  the offer stays open ${ttl} h; until the guarantee ends its cap counts against your limits as credit you may have to issue`,
-      `If ${creditor} accepts and calls, you will owe ${creditor} what it called (your credit note); ${issuer} still owes it too.`,
+      `If ${creditor} accepts and calls, you will owe ${creditor} what it called (your note); ${issuer} still owes it too.`,
       get(snap, 'not_settled', NOT_SETTLED),
       quoteLine('Note written by your agent', {note: or(get(a, 'note'), '')})].join('\n');
   }
@@ -2779,7 +2808,7 @@ export class ValunAgent {
     const backer = shown(guaranteeParty(g, 'backer', t)), issuer = shown(guaranteeParty(g, 'issuer', t));
     const open = iterate(or(get(g, 'calls'), [])).filter(x => isDict(x) && ['open', 'failed'].includes(get(x, 'state')));
     return [
-      `Valun - RELEASE guarantee ${shown(get(g, 'guarantee_id'))} from ${backer}: it backs what ${issuer} owes you, up to `
+      `Valun - RELEASE guarantee ${shown(get(g, 'guarantee_id'))} from ${backer}: it guarantees what ${issuer} owes you, up to `
         + `${amountText(t.cap.amount, u)}.`,
       '  after this you can no longer call it' + (open.length ? `; its ${open.length} unhonored call(s) end too` : ''),
       `  terms hash ${chk.terms_hash.slice(0, 16)}... (recomputed from these terms; your Valun client checks it again before signing)`,
@@ -2792,15 +2821,16 @@ export class ValunAgent {
     const creditor = shown(guaranteeParty(g, 'creditor', t)), issuer = shown(guaranteeParty(g, 'issuer', t));
     const amount = call.amount;
     return [
-      `Valun - HONOR call ${shown(get(call, 'call_id'))} of your guarantee ${shown(get(g, 'guarantee_id'))}: ISSUE A CREDIT NOTE `
+      `Valun - HONOR call ${shown(get(call, 'call_id'))} of your guarantee ${shown(get(g, 'guarantee_id'))}: ISSUE A NOTE `
         + `of ${amountText(amount, u)} to ${creditor}:`,
-      `  you backed what ${issuer} owes ${creditor}, up to ${amountText(t.cap.amount, u)}; honored so far: `
+      `  you guaranteed what ${issuer} owes ${creditor}, up to ${amountText(t.cap.amount, u)}; honored so far: `
         + `${amountText(whole(get(g, 'honored')) ? g.honored : 0, u)}`,
       `  ${issuer} owes ${creditor} ${shown(get(g, 'issuer_owes_creditor'))} ${u} on the tracker now (as the server shows it); `
         + `the call is due by ${shown(get(call, 'honor_by'))}`,
       `  terms hash ${chk.terms_hash.slice(0, 16)}... (your Valun client checks the guarantee, the creditor's signature on the call `
         + 'and your own record of the cap again before signing)',
-      `Your agent signs a Basis note; ${trackerWords(get(snap, 'network'))} then records that you owe ${creditor} `
+      `Your agent signs a note in the tracker's format; ${trackerWords(get(snap, 'network'))} then records that you owe `
+        + `${creditor} `
         + `${amountText(amount, u)} more.`,
       get(snap, 'not_settled', NOT_SETTLED)].join('\n');
   }
@@ -2930,12 +2960,13 @@ export class ValunAgent {
     const facts = m.checks_against_agreed_terms.map(x => `${x.requirement}: ${x.measured} (${x.met ? 'met' : 'NOT met'})`);
     facts.push(...exactFacts(t, content, chk.handle));
     return [
-      `Valun - ACCEPT ${who}'s delivery (${shown(chk.other_id)}, deal ${shown(t.deal_id)}) and ISSUE A CREDIT NOTE `
+      `Valun - ACCEPT ${who}'s delivery (${shown(chk.other_id)}, deal ${shown(t.deal_id)}) and ISSUE A NOTE `
         + `of ${amountText(price, u)} to ${who}:`,
       `  delivered: ${utf8(content).length} bytes, sha256 ${chk.sha256.slice(0, 16)}... (recomputed from the text measured here)`,
       '  measured: ' + (facts.join('; ') || `${m.word_count} words, ${m.links.length} links`),
       `  agreed terms hash ${chk.terms_hash.slice(0, 16)}... (your Valun client checks both hashes again before signing)`,
-      `Your agent signs a Basis note; ${trackerWords(get(snap, 'network'))} then records that you owe ${who} `
+      `Your agent signs a note in the tracker's format; ${trackerWords(get(snap, 'network'))} then records that you owe `
+        + `${who} `
         + `${amountText(price, u)} more.`,
       get(snap, 'not_settled', NOT_SETTLED),
       quoteLine('Delivery title and agreed service text', {delivery_title: or(get(dl, 'title'), ''), title: get(svc, 'title'),
@@ -2958,11 +2989,10 @@ export class ValunAgent {
     const speedWords = typeof speed === 'string' && Object.hasOwn(CONSENT_SPEED_WORDS, speed) ? CONSENT_SPEED_WORDS[speed] : shown(speed);
     return [
       `Valun - PAY ${payee} ${amountText(price, u)} for deal ${shown(t.deal_id)} by moving ${amountText(price, u)} `
-        + `of ${issuer}'s debt from you `
-        + `to ${payee}:`,
-      `  your claim on ${issuer}: ${x} -> ${x - price} ${u} (issuer signature checked by your client)`,
-      `  ${issuer} will owe ${payee} ${y} -> ${y + price} ${u}; its total debt does not change`,
-      '  you issue no credit note for this deal',
+        + `of what ${issuer} owes you to ${payee}:`,
+      `  the total of ${issuer}'s note to you: ${x} -> ${x - price} ${u} (issuer signature checked by your client)`,
+      `  the total of ${issuer}'s note to ${payee}: ${y} -> ${y + price} ${u}; what ${issuer} owes in all does not change`,
+      '  you issue no note for this deal',
       `  ${issuer} consents ${speedWords}; accepting is final: if the transfer does not `
         + 'complete the deal stays accepted and you pay later',
       `  ${issuer} is ${shown(iss.id)} and ${payee} is ${shown(chk.other_id)}; quote ${tr.quote_digest.slice(0, 16)}... `
@@ -3047,7 +3077,8 @@ export class ValunAgent {
     if (pending === null && isDict(get(pos, 'pending'))) pending = get(pos.pending, 'consents_waiting_for_you');
     const log = Array.isArray(get(c.state, 'consent_log')) ? c.state.consent_log : [];
     const spend = notes.reduce((t, n) => t + n.amount_PC, 0);
-    const summary = `You hold ${shown(hold)} ${u} of credit notes others issued to you and owe ${shown(owe)} ${u} (net ${shown(net)} ${u}); `
+    const summary = `You hold ${shown(hold)} ${u} of notes others issued to you and owe ${shown(owe)} ${u} of your own `
+      + `(net ${shown(net)} ${u}); `
       + `set-offs have cleared ${shown(cleared)} ${u} so far. `
       + (notes.length ? `You can spend ${amountText(spend, u)} of notes you hold (${notes.map(n => shown(n.issuer)).join(', ')}) with pay_with `
         + 'when you accept a delivery. ' : 'You hold no notes you can spend now. ')
@@ -3055,11 +3086,13 @@ export class ValunAgent {
       + (whole(pending) && pending > 0 ? ` ${pending} consent(s) wait for your client.` : '');
     const out = {summary,
       money_view: {you_hold_PC: hold, you_owe_PC: owe, net_PC: net, cleared_so_far_PC: cleared,
-        how_to_read: 'hold: credit notes others issued to you that are still outstanding (what they '
-          + 'owe you); owe: your own outstanding notes; net = hold - owe. Paying with a note '
-          + 'you hold moves it to the payee (hold falls by the price); a set-off cancels equal '
-          + 'claims and debts around a cycle (hold and owe fall together, net does not change); '
-          + 'cleared_so_far counts what set-offs cancelled. ' + (Object.hasOwn(VALUE_WORDS, u) ? VALUE_WORDS[u] : VALUE_WORDS.PC)},
+        how_to_read: 'hold: the notes others issued to you that are still outstanding (what '
+          + 'they owe you); owe: your own outstanding notes (what you owe); net = hold - '
+          + 'owe. Paying with a note you hold moves that much of it to the payee (hold '
+          + 'falls by the price); a set-off clears a loop of notes (hold and owe fall '
+          + 'together, net does not change): it clears, and settles nothing; '
+          + 'cleared_so_far counts what set-offs cleared. '
+          + (Object.hasOwn(VALUE_WORDS, u) ? VALUE_WORDS[u] : VALUE_WORDS.PC)},
       notes_you_can_spend: notes,
       payments_in_progress: Array.isArray(get(box, 'payments_in_progress')) ? box.payments_in_progress : [],
       clearing: {your_client_signs: signs, consents_pending: pending,
@@ -3096,7 +3129,7 @@ export class ValunAgent {
         checked_by_your_client: isDict(st) && whole(get(st, 'total')) && st.total >= amount,
         issuer_consents: get(n, 'issuer_consents'),
         how: `valun_review_delivery decision='accept' pay_with=${quoted(name)}: pays a delivery by moving that `
-          + 'much of their debt to you onto the payee'});
+          + 'much of what they owe you onto the payee'});
     }
     return out;
   }
@@ -3185,7 +3218,7 @@ export class ValunAgent {
         const pay = whole(price) && (spendable.get(other) ?? 0) >= price ? other : 'own_note';
         const args = {deal_id: did, decision: 'accept', expected_deliverable_sha256: get(dl, 'sha256'), pay_with: pay};
         const why = 'the delivery matches the exact result of the agreed text: accept it and pay '
-          + (pay === 'own_note' ? 'with your own credit note' : `with the note ${pay} issued to you`);
+          + (pay === 'own_note' ? 'with your own note' : `with the note ${pay} issued to you`);
         return plan(step, [call('valun_review_delivery', args, why)],
           'Payment by transfer applies at once with the sandbox agents; call valun_status again.');
       }
@@ -3225,7 +3258,7 @@ export class ValunAgent {
     // between the GET /me these holdings come from and the GET /inbox read after it. Either way its note is not in the
     // holdings yet: wait, never start another deal on them (that sold a second job to sandbox-exact).
     if (count('agreed_note_not_issued')) {
-      return plan(ox > 0 ? 4 : 1, [], 'A deal of yours with a sandbox agent is being paid (its credit note is being '
+      return plan(ox > 0 ? 4 : 1, [], 'A deal of yours with a sandbox agent is being paid (its note is being '
         + 'recorded on the tracker); wait for it: call valun_status again in a few seconds.');
     }
     if ((hx > 0 || hm > 0) && ox > 0) {
@@ -3266,7 +3299,7 @@ export class ValunAgent {
     }
     const p = offer(1, SANDBOX_EXACT, 'payee', 'text-stats');
     if (paidByTransfer > 0) {                         // spent by transfer, but no set-off has cleared anything: not done yet
-      p.then = 'The tour is not complete: no set-off has cleared any of your claims or debts yet, and you hold no '
+      p.then = 'The tour is not complete: no set-off has cleared any of the notes you hold or issued yet, and you hold no '
         + "note to spend now. Earn sandbox-exact's note again; then pay sandbox-exact with your own note, and "
         + 'the 2-cycle that forms is cleared by a set-off. sandbox-exact answers within a few seconds; call '
         + 'valun_status again for the next step.';
@@ -3312,8 +3345,8 @@ export class ValunAgent {
       text += `you earned ${hold + out + cleared} ${unit} and spent ${out + owe + cleared} ${unit} (${out} by transfer, `
         + `${owe + cleared} with your own note), and `;
     }
-    text += `set-offs cancelled ${cleared} ${unit} of your claims and ${cleared} ${unit} of your debts without changing your net `
-      + 'position.';
+    text += `set-offs cleared ${cleared} ${unit} of the notes you hold and ${cleared} ${unit} of the notes you issued, `
+      + 'without changing your net position.';
     if ((whole(hold) && hold > 0) || (whole(owe) && owe > 0)) text += ` You still hold ${shown(hold)} ${unit} and owe ${shown(owe)} ${unit}.`;
     return text + ' You can keep trading with the sandbox agents.';
   }
@@ -3332,9 +3365,11 @@ export class ValunAgent {
   /**
    * One page of the active participants other than this one (fix inbox #36), from the list's own fields: those matching
    * `query` (case-insensitive) in their handle or display name first, then in services or wants, then only in about
-   * (then the rest the text filter matches, across two fields); then those whose agent was active in the last 24 hours
-   * (recentlyActive); then the most recently seen (agent_last_seen, never seen last); then by handle (code points).
-   * Only the page's participants are looked up (GET /participants/{id}, for their public position).
+   * (then the rest the text filter matches, across two fields); then sandbox-exact, the server's other always-on agents,
+   * its house agents and the rest (the server's directory order; fix inbox #177); then those whose agent was active in
+   * the last 24 hours (recentlyActive); then the most recently seen (agent_last_seen, never seen last); then by handle
+   * (code points). Only the page's participants are looked up (GET /participants/{id}, for their public position). An
+   * agent the server runs has a label (directoryLabel).
    */
   async directory(a) {
     const c = this.client();
@@ -3352,8 +3387,10 @@ export class ValunAgent {
       else if ([handle, name, about, services, wants].join(' ').includes(q)) tier = 3;
       else continue;
       const active = recentlyActive(get(p, 'agent_last_seen'), 24, get(p, 'joined_at'), this.#now());
-      // the operator's always-on agents first (operator_run), then its house agents, then the rest (the Nov 18 run, #6)
-      const kind = get(p, 'operator_run') === true ? 0 : get(p, 'house_agent') === true ? 1 : 2;
+      // sandbox-exact first, then the operator's other always-on agents (operator_run), then its house agents, then the
+      // rest (the Nov 18 run, #6; the server's directoryOrder; fix inbox #177)
+      const kind = get(p, 'operator_run') === true && get(p, 'handle') === SANDBOX_EXACT ? 0 : get(p, 'operator_run') === true ? 1
+        : get(p, 'house_agent') === true ? 2 : 3;
       ranked.push({tier, kind, active, seen: seenUs(get(p, 'agent_last_seen')), handle: str(or(get(p, 'handle'), '')), p});
     }
     // as Python sorts its key (tier, kind, not active, never seen, -seen, handle); stable, as Python's sort
@@ -3363,15 +3400,18 @@ export class ValunAgent {
     const out = [];
     for (const {p, active} of ranked.slice(offset, offset + limit)) {
       const pos = get(await c.participant(item(p, 'id')), 'public_position', {});
+      const label = directoryLabel(p);
       out.push({handle: item(p, 'handle'), id: item(p, 'id'), name: item(p, 'display_name'), operator: item(p, 'operator'),
-        about: directoryText(item(p, 'about')), services: directoryText(item(p, 'services')),
+        ...(label ? {label} : {}), about: directoryText(item(p, 'about')), services: directoryText(item(p, 'services')),
         wants: directoryText(or(get(p, 'wants'), '')), credit_notes_they_hold_PC: get(pos, 'claims_held'),
         credit_notes_they_owe_PC: get(pos, 'owes'), deals: get(pos, 'deals'),
         agent_last_seen: get(p, 'agent_last_seen'), agent_recently_active: active});
     }
     const where = (c.network ?? NETWORK) === TESTNET
-      ? 'positions are outstanding credit notes recorded by the Valun testnet Basis tracker and anchored on Ergo testnet; a '
-        + "creditor can redeem one against its issuer's reserve, if it has one; tERG have no monetary value."
+      ? 'positions are the notes each agent holds (credit_notes_they_hold_PC) and issued (credit_notes_they_owe_PC), '
+        + 'outstanding, as the Valun testnet Basis tracker records them; a tracker box on Ergo testnet commits each '
+        + "pair's total. A note is settled only when its holder redeems it against a tERG reserve locked under the key "
+        + 'that signed it (GET /reserves); tERG have no monetary value.'
       : 'positions are outstanding credit notes recorded by the pilot Basis tracker; nothing is settled; PC have no value.';
     const total = ranked.length, end = offset + out.length;
     const r = {participants: out, total_matching: total, offset};
@@ -3381,7 +3421,8 @@ export class ValunAgent {
       r.how_to_see_more = q
         ? `Showing ${offset + 1}-${end} of ${total} matching the query (best matches first). For more, call valun_directory `
           + `again with the same query and offset ${end}, or narrow the query.`
-        : `Showing ${offset + 1}-${end} of ${total} (the operator's always-on agents first, then the most recently active). `
+        : `Showing ${offset + 1}-${end} of ${total} (sandbox-exact first, then the operator's other agents, then its house `
+          + 'agents, then the most recently active). '
           + `For more, call valun_directory again with offset ${end}, or narrow it with query.`;
     }
     return r;
@@ -3444,7 +3485,7 @@ export class ValunAgent {
       deals: deals === undefined ? null : deals});
     const out = {guarantee: guaranteeBrief(g)};
     const who = shown(get(creditor, 'handle')), of = shown(get(issuer, 'handle'));
-    const calls = `If ${who} calls it, you pay each call with your own IOU to ${who}, which is recorded at once and never `
+    const calls = `If ${who} calls it, you pay each call with your own note to ${who}, which is recorded at once and never `
       + 'held for your owner, even with console approvals.';
     if (isDict(g) && get(g, 'state') === 'awaiting_owner') {
       // Held for the owner (its cap above approve_above), as the Python agent says it.
@@ -3506,16 +3547,16 @@ export class ValunAgent {
       const state = call !== null ? get(call, 'state') : null;
       if (state === 'honored' && whole(get(call, 'amount'))) {
         const amount = amountText(call.amount, c.unit ?? UNIT);
-        out.what_happened = `You honored call ${shown(cid)}: your IOU to ${who} for ${amount} `
+        out.what_happened = `You honored call ${shown(cid)}: your note to ${who} for ${amount} `
           + `went to ${trackerWords(c.network ?? NETWORK)} at once. It was not `
           + 'held for your owner: honoring a guarantee call never is, even with console '
           + `approvals. You owe ${who} ${amount} more, and nothing is settled. Tell your owner.`;
       } else if (state === 'failed') {
-        out.what_happened = `The tracker did not record your IOU for call ${shown(cid)}, so it adds nothing to `
+        out.what_happened = `The tracker did not record your note for call ${shown(cid)}, so it adds nothing to `
           + `what you owe ${who}. The call still waits to be honored: honor it again (your `
-          + 'client signs a new IOU), and tell your owner.';
+          + 'client signs a new note), and tell your owner.';
       } else if (call !== null) {
-        out.what_happened = `Your IOU for call ${shown(cid)} was sent; the server shows the call as `
+        out.what_happened = `Your note for call ${shown(cid)} was sent; the server shows the call as `
           + `${shown(state)}: valun_guarantees shows when the tracker has recorded it. It was `
           + 'not held for your owner: honoring a guarantee call never is.';
       }
@@ -3532,7 +3573,7 @@ export class ValunAgent {
     if (amount !== null && !(whole(amount) && amount > 0)) throw new ValunError('bad_arguments', 'amount must be a whole number of at least 1');
     const g = await c.callGuarantee(gid, {amount, expectedTermsHash: get(a, 'expected_terms_hash')});
     const hours = isDict(g) ? get(g, 'honor_within_hours') : null;
-    return {guarantee: guaranteeBrief(g), what_happens_next: `The backer has ${shown(hours)} hours to honor the call with its own credit note to you.`};
+    return {guarantee: guaranteeBrief(g), what_happens_next: `The backer has ${shown(hours)} hours to honor the call with its own note to you.`};
   }
 
   // ---------- budget cards ----------
@@ -3607,8 +3648,8 @@ export class ValunAgent {
     } else if (st === 'note_failed') {
       // The IOU failed at the tracker after the delivery was accepted: the acceptance stands, so a dispute is refused.
       out.whose_turn = get(d, 'your_role') === 'payer'
-        ? 'yours: the delivery stays accepted and is unpaid; pay it again (a new IOU, or by transfer when the window allows)'
-        : 'theirs: the payer accepted your delivery and must pay it again (its IOU failed at the tracker)';
+        ? 'yours: the delivery stays accepted and is unpaid; pay it again (a new note, or by transfer when the window allows)'
+        : 'theirs: the payer accepted your delivery and must pay it again (its note failed at the tracker)';
     } else if (OWNER_WAITS.includes(st)) {
       out.whose_turn = ownerTurn(d, c.participantId, now);
       const [by, exp] = heldNoteHour(d, now);
@@ -3618,14 +3659,14 @@ export class ValunAgent {
       }
     } else if (st === 'paying_by_transfer') {
       out.whose_turn = get(d, 'your_role') === 'payer'
-        ? 'theirs: the issuer and the payee sign the debt transfer that pays this deal (your Valun client signed your part)'
-        : 'theirs: the debt transfer that pays you collects its signatures (your Valun client signs yours by itself if your owner allows it)';
+        ? 'theirs: the issuer and the payee sign the transfer that pays this deal (your Valun client signed your part)'
+        : 'theirs: the transfer that pays you collects its signatures (your Valun client signs yours by itself if your owner allows it)';
     } else if (st === 'payment_due') {
       out.whose_turn = get(d, 'your_role') === 'payer'
         ? "yours: you accepted the delivery but it is not paid yet; pay it with valun_review_delivery decision='accept' (see how_you_can_pay)"
         : 'theirs: the payer accepted your delivery and must still pay it';
     } else if (st === 'paid_by_transfer') {
-      out.whose_turn = 'nobody: the deal is paid by debt transfer';
+      out.whose_turn = 'nobody: the deal is paid by transfer';
     } else {
       out.whose_turn = `nobody: the deal is ${str(st)}`;
     }
@@ -3743,7 +3784,7 @@ export class ValunAgent {
     }
     return {options, pending_transfer: get(opts, 'pending_transfer'), fallback_after: get(opts, 'fallback_after'),
       how: "valun_review_delivery decision='accept' with pay_with set to an available option (own_note issues your "
-        + 'own credit note; a handle passes on a note you hold). Accepting is final: if a transfer does not '
+        + 'own note; a handle passes on a note you hold). Accepting is final: if a transfer does not '
         + 'complete, the deal stays accepted and you pay later.'};
   }
 
@@ -3778,8 +3819,8 @@ export class ValunAgent {
       what_happened: waiting ? heldText
         : `${handle} can now accept, decline or counter your signed offer.`,
       if_agreed: role === 'payer'
-        ? `After you accept their delivery you issue them a credit note of ${shownPrice} (you will owe them; not settled).`
-        : `After they accept your delivery they issue you a credit note of ${shownPrice} (they will owe you; not settled).`,
+        ? `After you accept their delivery you issue them a note of ${shownPrice} (you will owe them; not settled).`
+        : `After they accept your delivery they issue you a note of ${shownPrice} (they will owe you; not settled).`,
       ...(idle ? {warning: idle} : {}), ...wait};
   }
 
@@ -3848,7 +3889,7 @@ export class ValunAgent {
     }
     const r = await c.deliver(did, item(a, 'content'), {title: or(get(a, 'title'), '')});
     return {deal_id: item(r, 'id'), status: item(r, 'status'), sha256: item(item(r, 'delivery'), 'sha256'),
-      what_happened: 'Delivered and signed. The payer will accept it (issuing you a credit note) or dispute it.'};
+      what_happened: 'Delivered and signed. The payer will accept it (issuing you a note) or dispute it.'};
   }
 
   /**
@@ -3882,7 +3923,7 @@ export class ValunAgent {
     if (item(a, 'decision') === 'dispute') {
       if (!truthy(strip(or(get(a, 'reason'), '')))) throw new ValunError('reason_required', 'a dispute needs a reason');
       const r = await c.dispute(did, item(a, 'reason'));
-      return {deal_id: item(r, 'id'), status: item(r, 'status'), what_happened: 'Disputed. No credit note was issued; the dispute is recorded.'};
+      return {deal_id: item(r, 'id'), status: item(r, 'status'), what_happened: 'Disputed. No note was issued; the dispute is recorded.'};
     }
     const issuer = ValunAgent.#payWith(a);
     if (issuer !== null) return this.#reviewPayWith(c, a, issuer);
@@ -3904,17 +3945,17 @@ export class ValunAgent {
         wait.decide_by = by;
         wait.note_expires_at = exp;
       }
-      msg = `You accepted the delivery and signed your IOU to ${payee} for ${price}. The Valun server holds it for `
+      msg = `You accepted the delivery and signed your note to ${payee} for ${price}. The Valun server holds it for `
         + `your owner: it is not on the tracker yet, and ${payee} sees that you accepted the delivery but not the `
-        + `IOU's signature. Tell your owner to approve or reject it${where}`
-        + (exp ? ` by ${deadlineWords(by, exp)}: an IOU still held at ${exp} is never recorded and pays nothing, and `
+        + `note's signature. Tell your owner to approve or reject it${where}`
+        + (exp ? ` by ${deadlineWords(by, exp)}: a note still held at ${exp} is never recorded and pays nothing, and `
           + 'valun_deal then says what to do' : '')
         + `. If approved, you owe ${payee} ${price} more: a promise to pay that `
         + `${trackerWords(c.network ?? NETWORK)} records, not a settlement. If rejected, it is never `
         + 'sent (the server keeps it, still signed) and the deal comes back to you: valun_deal says what you may '
-        + 'do (accept the delivery again with a new IOU, which waits for your owner again, or dispute it).';
+        + 'do (accept the delivery again with a new note, which waits for your owner again, or dispute it).';
     } else if (status === 'note_issued') {
-      msg = `Credit note issued: the Basis tracker now records that you owe ${str(item(item(r, 'counterparty'), 'handle'))} `
+      msg = `Note issued: the Basis tracker now records that you owe ${str(item(item(r, 'counterparty'), 'handle'))} `
         + `${str(get(or(get(n, 'tracker_note'), {}), 'amount_collected'))} ${c.unit ?? UNIT} in total (this deal added ${str(get(n, 'amount'))}). `
         + labels(this.#circulating(c), c.network ?? NETWORK).settlement;
     } else {
@@ -3956,18 +3997,18 @@ export class ValunAgent {
     const hold = typeof get(pay, 'expires_at') === 'string' && pay.expires_at ? pay.expires_at : null;
     if (hold && st === 'completion_awaiting_owner') wait.hold_expires_at = hold;
     const priced = whole(price) ? amountText(price, c.unit ?? UNIT) : 'the price';
-    const heldText = `You accepted the delivery and signed a payment by transfer: ${priced} of ${shown(by)}'s IOU to you moves `
+    const heldText = `You accepted the delivery and signed a payment by transfer: ${priced} of ${shown(by)}'s note to you moves `
       + `to ${str(who)}. Nobody else has signed it. It waits for your owner${where}`
       + (hold ? ` until ${shown(hold)}, 20 minutes after you signed it` : '')
       + `: tell your owner now. Once approved, ${shown(by)} and ${str(who)} sign it (their Valun clients do so by `
       + 'themselves where their owners allow it), and the delivery stays accepted even if the transfer then '
       + 'fails. If your owner rejects it, or that time passes, nothing moves and the deal comes back to you: you '
-      + `may pay again through ${shown(by)}'s IOU at once while it is unchanged, or any other way about an hour `
+      + `may pay again through ${shown(by)}'s note at once while it is unchanged, or any other way about an hour `
       + 'after you signed.';
     const msgs = {
-      paid_by_transfer: `Paid by debt transfer: ${str(by)} now owes ${str(who)} ${amount} ${c.unit ?? UNIT} more and you ${amount} ${c.unit ?? UNIT} `
-        + 'less; you issued no credit note for this deal. ' + labels(true, c.network ?? NETWORK).settlement,
-      paying_by_transfer: 'You accepted the delivery and signed the debt transfer; it applies once the issuer and '
+      paid_by_transfer: `Paid by transfer: ${str(by)} now owes ${str(who)} ${amount} ${c.unit ?? UNIT} more and you ${amount} ${c.unit ?? UNIT} `
+        + 'less; you issued no note for this deal. ' + labels(true, c.network ?? NETWORK).settlement,
+      paying_by_transfer: 'You accepted the delivery and signed the transfer; it applies once the issuer and '
         + 'the payee sign. Accepting is final: if it does not complete, the deal stays accepted and '
         + 'you pay later.',
       completion_awaiting_owner: heldText,

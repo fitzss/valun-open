@@ -872,7 +872,7 @@ class Run {
       const after = (this.shown.has(edge) ? this.shown.get(edge) : ABSENT).timestamp;
       for (const p of this.pair(edge)[1]) {
         if (get(p, 'kind') === 'note' && get(p, 'direction') === 'out' && mod(p.timestamp, 1000) < RESERVED_MS[0] && p.timestamp > after) {
-          this.refuse('pending_unbound_note', 'you hold an unapplied ordinary credit note on this edge; a '
+          this.refuse('pending_unbound_note', 'you hold an unapplied ordinary note on this edge; a '
             + 'novation is signed only once it is settled either way');
         }
       }
@@ -897,7 +897,7 @@ class Run {
         const paid = get(this.paid, dealId);
         if (isDict(paid) && get(paid, 'edge') === edge && pyEq(get(paid, 'total'), b.total) && pyEq(get(paid, 'timestamp'), b.timestamp)) continue;
         if (pyEq(b.prior, newTotal)) {
-          this.refuse('payment_attempt', 'this would bring your edge back to the prior a bound credit note of '
+          this.refuse('payment_attempt', 'this would bring your edge back to the prior a bound note of '
             + 'yours acknowledged, which could then still apply; it is signed only once that note is past its maximum age');
         }
       }
@@ -1011,13 +1011,13 @@ function bound(run, tpl) {
       || !text(meId) || deal.payer.id !== meId) {
     run.refuse('deal_mismatch', 'the template is not for the deal, terms and delivery you are paying (as the payer)');
   }
-  if (I !== run.me) run.refuse('not_my_edge', 'the template is not for a credit note from your key');
+  if (I !== run.me) run.refuse('not_my_edge', 'the template is not for a note from your key');
   const payeeNow = get(run.ctx, 'payee_current_pk');
   if (!isPk(payeeNow) || R !== payeeNow) run.refuse('wrong_destination', "the template's recipient is not the payee's current key");
   const edge = edgeKey(I, R);
   if (ts % 1000 !== BOUND_MS) {
-    if (run.novated.has(edge) || run.boundAdvertised()) run.refuse('bound_note_required', 'this edge takes bound credit notes only (residue 997)');
-    run.refuse('timestamp_domain', `a bound credit note has a timestamp ending in 997 ms, not ${ts % 1000}`);
+    if (run.novated.has(edge) || run.boundAdvertised()) run.refuse('bound_note_required', 'this edge takes bound notes only (residue 997)');
+    run.refuse('timestamp_domain', `a bound note has a timestamp ending in 997 ms, not ${ts % 1000}`);
   }
   if (price !== deal.price || total !== P + price) run.refuse('amount_mismatch', `the note must add exactly the agreed price (${deal.price} ${run.unit})`);
   if (prior !== null && !run.verified(I, R, prior)) run.refuse('bad_prior_signature', 'the prior note shown is not signed by your key');
@@ -1222,7 +1222,7 @@ function member(run, it, edges, context) {
   for (const e of edges) if (e.new >= e.before.total) run.refuse('increase_in_setoff', 'a set-off only lowers edges');
   const asCreditor = sum(edges.filter(e => e.R === me).map(e => e.before.total - e.new));
   const asIssuer = sum(edges.filter(e => e.I === me).map(e => e.before.total - e.new));
-  if (asCreditor !== asIssuer) run.refuse('not_net_neutral', `your claims would fall by ${asCreditor} ${run.unit} and your debts by ${asIssuer} ${run.unit}`);
+  if (asCreditor !== asIssuer) run.refuse('not_net_neutral', `the notes you hold would fall by ${asCreditor} ${run.unit} and the notes you issued by ${asIssuer} ${run.unit}`);
   for (const e of edges) {
     if (!run.verified(e.I, e.R, e.before)) run.refuse('bad_prior_signature', "an edge state shown is not its issuer's signature");
   }
@@ -1271,7 +1271,7 @@ function issuer(run, it, edges, context) {
     run.refuse('total_owed_changes', `your total owed would change: both edges must move exactly ${a} ${run.unit}`);
   }
   if (!(sameId(get(context, 'payer'), fe.recipient_id) && sameId(get(context, 'payee'), te.recipient_id))) {
-    run.bad('the item names creditors other than the ones its edges are to');
+    run.bad('the item names holders other than the ones its edges are to');
   }
   if ([fe, te].some(e => e.before !== null && !run.verified(me, e.R, e.before))) {
     run.refuse('bad_prior_signature', 'an edge state shown is not signed by your key');

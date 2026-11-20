@@ -910,11 +910,12 @@ class PayWith(Base):
                                      'expected_terms_hash': d['current']['terms_hash'],
                                      'expected_quote_digest': tpl['quote_digest'], 'expected_claim_total': 3})
         lines = p['text'].split('\n')
-        self.assertEqual(lines[0], f"Valun - PAY sandbox-mallory 2 PC for deal {self.did} by moving 2 PC of sandbox-exact's debt "
-                                   'from you to sandbox-mallory:')
-        self.assertEqual(lines[1:5], ['  your claim on sandbox-exact: 3 -> 1 PC (issuer signature checked by your client)',
-                                      '  sandbox-exact will owe sandbox-mallory 0 -> 2 PC; its total debt does not change',
-                                      '  you issue no credit note for this deal',
+        self.assertEqual(lines[0], f'Valun - PAY sandbox-mallory 2 PC for deal {self.did} by moving 2 PC of what sandbox-exact '
+                                   'owes you to sandbox-mallory:')
+        self.assertEqual(lines[1:5], ["  the total of sandbox-exact's note to you: 3 -> 1 PC (issuer signature checked by your client)",
+                                      "  the total of sandbox-exact's note to sandbox-mallory: 0 -> 2 PC; what sandbox-exact owes in "
+                                      'all does not change',
+                                      '  you issue no note for this deal',
                                       '  sandbox-exact consents immediately; accepting is final: if the transfer does not complete '
                                       'the deal stays accepted and you pay later'])
         self.assertIn(f'sandbox-exact is {X_ID} and sandbox-mallory is {M_ID}', lines[5])
@@ -1053,7 +1054,7 @@ class PayWith(Base):
 
     def test_own_note_is_the_ordinary_review(self):
         p = self.agent.prepare('valun_review_delivery', dict(self.args, pay_with='own_note'))
-        self.assertIn('ISSUE A CREDIT NOTE of 2 PC', p['text'])
+        self.assertIn('ISSUE A NOTE of 2 PC', p['text'])
         self.assertNotIn('expected_quote_digest', p['args'])
         r = self.agent.call('valun_review_delivery', p['args'])
         self.assertEqual(r['status'], 'note_issued')
@@ -1135,11 +1136,11 @@ class OnlyWhenAdvertised(unittest.TestCase):
         self.assertEqual(st['notes_you_can_spend'], [{'issuer': 'sandbox-exact', 'amount': 3, 'amount_PC': 3, 'checked_by_your_client': True,
                                                       'issuer_consents': 'immediate',
                                                       'how': "valun_review_delivery decision='accept' pay_with=\"sandbox-exact\": pays a "
-                                                             'delivery by moving that much of their debt to you onto the payee'}])
+                                                             'delivery by moving that much of what they owe you onto the payee'}])
         self.assertEqual({k: v for k, v in st['money_view'].items() if k != 'how_to_read'},
                          {'you_hold': 3, 'you_hold_PC': 3, 'you_owe': 0, 'you_owe_PC': 0, 'net': 3, 'net_PC': 3, 'cleared_so_far': 0,
                           'cleared_so_far_PC': 0})
-        self.assertTrue(st['summary'].startswith('You hold 3 PC of credit notes others issued to you and owe 0 PC (net 3 PC)'))
+        self.assertTrue(st['summary'].startswith('You hold 3 PC of notes others issued to you and owe 0 PC of your own (net 3 PC)'))
         self.assertEqual(st['clearing']['consents_pending'], 0)
         self.assertEqual(len(st['clearing']['your_client_signs']), 3)
         self.assertEqual((st['consent_policy_in_force']['setoff'], st['consent_policy_in_force']['as_issuer'],
@@ -1218,9 +1219,9 @@ class OnlyWhenAdvertised(unittest.TestCase):
                 texts[st] = d['whose_turn']
                 self.assertEqual(d['payment']['transfer_id'], 'vt_1')
                 self.assertEqual('how_you_can_pay' in d, st == 'payment_due')
-        self.assertTrue(texts['paying_by_transfer'].startswith('theirs: the issuer and the payee sign the debt transfer'))
+        self.assertTrue(texts['paying_by_transfer'].startswith('theirs: the issuer and the payee sign the transfer'))
         self.assertTrue(texts['payment_due'].startswith('yours: you accepted the delivery but it is not paid yet'))
-        self.assertEqual(texts['paid_by_transfer'], 'nobody: the deal is paid by debt transfer')
+        self.assertEqual(texts['paid_by_transfer'], 'nobody: the deal is paid by transfer')
 
     def test_a_deal_whose_info_cannot_be_read_is_shown_as_without_circulation(self):
         w = World(list(CIRC), welcome=False)
@@ -1686,7 +1687,7 @@ class SandboxNextSteps(Base):
         self.assertEqual(n['with_the_sandbox_agents'], {va.SANDBOX_EXACT: none, va.SANDBOX_MALLORY: none})
         self.assertNotEqual(n['tour_step'], 'done')
         self.assertNotIn('cancelled', n['then'])
-        self.assertIn('The tour is not complete: no set-off has cleared any of your claims or debts yet', n['then'])
+        self.assertIn('The tour is not complete: no set-off has cleared any of the notes you hold or issued yet', n['then'])
         self.assertEqual((n['tour_step'], n['next_calls'][0]['tool'], n['next_calls'][0]['arguments']['counterparty'],
                           n['next_calls'][0]['arguments']['role']), (1, 'valun_propose', 'sandbox-exact', 'payee'))
 
@@ -1696,7 +1697,7 @@ class PayerWords(Base):
     sandbox-mallory 2 PC (your credit note)", for a deal the tour then pays with sandbox-exact's note (the PAY prompt
     said so later). How a payer pays is decided only when it accepts the delivery, so on a server with circulating
     credit the payer's words in an offer, an acceptance and a counter-offer promise no credit note."""
-    PAYER = ('after you accept their delivery you will pay sandbox-mallory 2 PC: with your credit note, or with notes you '
+    PAYER = ('after you accept their delivery you will pay sandbox-mallory 2 PC: with your own note, or with notes you '
              'hold if you choose to.')
 
     def text(self, call):
@@ -1709,9 +1710,9 @@ class PayerWords(Base):
         self.assertEqual((n['tour_step'], n['next_calls'][0]['arguments']['role']), (2, 'payer'))
         t = self.text(n['next_calls'][0])
         self.assertIn('If sandbox-mallory accepts, the deal is binding without asking you again: ' + self.PAYER, t)
-        self.assertNotIn('(your credit note)', t)
+        self.assertNotIn('(your note)', t)
         sell = dict(n['next_calls'][0], arguments=dict(n['next_calls'][0]['arguments'], role='payee'))
-        self.assertIn('you must deliver; sandbox-mallory would then owe you 2 PC (their credit note).', self.text(sell))
+        self.assertIn('you must deliver; sandbox-mallory would then owe you 2 PC (their note).', self.text(sell))
 
 
 class PayerWordsWithoutCirculation(Base):
@@ -1722,7 +1723,7 @@ class PayerWordsWithoutCirculation(Base):
         offer = {'counterparty': 'sandbox-mallory', 'role': 'payer', 'title': 'notary job', 'deliverable': 'x', 'price': 2,
                  'description': 'notary for this text:\n```\nhi\n```'}
         t = self.agent.prepare('valun_propose', offer)['text']
-        self.assertIn('after you accept their delivery you will owe sandbox-mallory 2 PC (your credit note).', t)
+        self.assertIn('after you accept their delivery you will owe sandbox-mallory 2 PC (your note).', t)
 
 
 class PhaseZeroFixes(unittest.TestCase):

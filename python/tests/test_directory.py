@@ -139,6 +139,36 @@ class Order(unittest.TestCase):
         r = Agent(people).call('valun_directory', {'query': 'scribe'})
         self.assertEqual(handles(r), ['house-scribe', 'scribe-fan'])
 
+    def test_sandbox_exact_comes_first_by_rank_and_the_servers_agents_are_labelled(self):
+        # Fix inbox #177 item 6: sandbox-exact first explicitly, as the server's directoryOrder lists it (0.7.2 put it
+        # first only by the handle tie-break), and the server's own agents labelled in the server's A2A words.
+        people = [person(1, 'basis-busy', seen=0.01), person(2, 'house-scribe', seen=0.5, house_agent=True),
+                  person(3, 'sandbox-mallory', seen=0.01, operator_run=True),
+                  person(5, 'sandbox-exact', seen=3, operator_run=True), person(0, 'me', id=ME, seen=0)]
+        r = Agent(people).call('valun_directory', {})
+        self.assertEqual(handles(r), ['sandbox-exact', 'sandbox-mallory', 'house-scribe', 'basis-busy'])
+        labels = {e['handle']: e.get('label') for e in r['participants']}
+        self.assertEqual(labels, {'sandbox-exact': 'practice agent, operator-run; always exact, the one to try first',
+                                  'sandbox-mallory': 'practice agent, operator-run; wrong on purpose about half the time, '
+                                                     'for trying a dispute',
+                                  'house-scribe': 'house agent, operator-run; Claude on a shared daily and monthly budget, '
+                                                  'so it may decline',
+                                  'basis-busy': None})
+        self.assertNotIn('label', r['participants'][3], 'only the agents the server runs have one')
+        self.assertEqual(list(r['participants'][0])[:5], ['handle', 'id', 'name', 'operator', 'label'])
+        # a participant that only calls itself sandbox-exact is not the server's (operator_run is the server's word)
+        r = Agent([person(5, 'sandbox-exact', seen=0.01), person(3, 'sandbox-mallory', seen=3, operator_run=True)]).call(
+            'valun_directory', {})
+        self.assertEqual(handles(r), ['sandbox-mallory', 'sandbox-exact'])
+        self.assertNotIn('label', r['participants'][1])
+        a = Agent([person(1, seen=1)])
+        a.fake.network = va.TESTNET                 # the pilot's note keeps its words (the server's pilot labels)
+        note = a.call('valun_directory', {})['note']
+        self.assertTrue(note.startswith('positions are the notes each agent holds (credit_notes_they_hold_PC) and issued '
+                                        '(credit_notes_they_owe_PC), outstanding'), note)
+        for words in ('IOU', 'credit note ', 'credit notes ', 'creditor', "issuer's reserve"):
+            self.assertNotIn(words, note)
+
     def test_ties_go_by_handle_in_code_point_order(self):
         seen = ago(3)
         people = [person(i, h, agent_last_seen=seen) for i, h in enumerate(['b', 'a\U0001F600', 'aａ', 'A', 'a'], 1)]
@@ -153,7 +183,7 @@ class Paging(unittest.TestCase):
         self.assertEqual(handles(r), [f'agent-{i:03d}' for i in range(1, 11)])
         self.assertEqual(list(r), ['participants', 'total_matching', 'offset', 'next_offset', 'note', 'how_to_see_more'])
         self.assertEqual((r['total_matching'], r['offset'], r['next_offset']), (25, 0, 10))
-        self.assertEqual(r['how_to_see_more'], "Showing 1-10 of 25 (the operator's always-on agents first, then the most recently active). For more, call "
+        self.assertEqual(r['how_to_see_more'], "Showing 1-10 of 25 (sandbox-exact first, then the operator's other agents, then its house agents, then the most recently active). For more, call "
                                                f'valun_directory again with offset 10, or narrow it with query.')
         self.assertTrue(r['note'].endswith(' A participant whose agent has not been seen in the last 24 hours may never answer an offer.'))
         self.assertEqual(a.fake.reads, 1)
@@ -165,7 +195,7 @@ class Paging(unittest.TestCase):
         self.assertEqual(len(set(sum((handles(r) for r in pages), []))), 25)
         r = pages[1]
         self.assertEqual((r['offset'], r['next_offset'], r['total_matching']), (10, 20, 25))
-        self.assertEqual(r['how_to_see_more'], "Showing 11-20 of 25 (the operator's always-on agents first, then the most recently active). For more, call "
+        self.assertEqual(r['how_to_see_more'], "Showing 11-20 of 25 (sandbox-exact first, then the operator's other agents, then its house agents, then the most recently active). For more, call "
                                                f'valun_directory again with offset 20, or narrow it with query.')
         last = pages[2]                                 # the last page: nothing more to show
         self.assertEqual((handles(last), last['offset'], last['total_matching']), ([f'agent-{i:03d}' for i in range(21, 26)], 20, 25))

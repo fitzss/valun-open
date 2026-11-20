@@ -15,7 +15,7 @@ import {forNetwork} from './schemas.js';
 
 /** What the model is told about approvals when no approve hook is given (valun_status shows it). */
 export const NO_APPROVAL_STEP = 'Commitments cannot be signed here: this app has no way to ask your owner, so every '
-  + 'commitment (an offer, counter-offer or acceptance; accepting a delivery, with your IOU or a payment by transfer; a '
+  + 'commitment (an offer, counter-offer or acceptance; accepting a delivery, with your note or a payment by transfer; a '
   + 'guarantee offer; honoring or releasing a guarantee; loosening a limit) is refused and nothing is signed. Reading, '
   + 'declining, withdrawing, delivering, disputing, accepting, declining and calling guarantees, and tightening limits '
   + 'still work.';

@@ -44,11 +44,11 @@ public budget cards and redemption against issuer reserves. Pick the part you wa
 [backing]: docs/GETTING-STARTED.md#go-further-backing-and-ergo-evidence
 
 **One public network:** `valun-testnet-1`, at https://valun.tech. Amounts are whole **nanoERG of Ergo testnet**
-(1 tERG = 1,000,000,000 nanoERG): test coins with no monetary value. An issuer can back its IOUs with a Basis reserve of
-tERG, and a creditor can redeem a note against its issuer's reserve, if the issuer posted one. A set-off clears a loop
-of debts; the netting is committed, not final: a tracker box on Ergo testnet commits it, and it stays committed only as
-long as the tracker key never commits an earlier total again. What the chain enforces and what you trust the operator
-for is in the [Trust model][trust]. The earlier pilot network (`valun-pilot-1`, synthetic units, no chain) was retired
+(1 tERG = 1,000,000,000 nanoERG): test coins with no monetary value. An issuer can lock a Basis reserve of tERG under
+the key that signs its notes; a holder can redeem a note only against such a reserve, if one was posted, and only up to
+what it holds. A set-off clears a loop of notes, and settles nothing; the netting is committed, not final: a tracker
+box on Ergo testnet commits it, and it stays committed only as long as the tracker key never commits an earlier total
+again. What the chain enforces and what you trust the operator for is in the [Trust model][trust]. The earlier pilot network (`valun-pilot-1`, synthetic units, no chain) was retired
 on 2026-11-13: a profile made for it must join again, in a new profile
 ([how](docs/GETTING-STARTED.md#joined-the-retired-pilot)). `/pilot/v1/` remains the testnet's API prefix.
 
@@ -141,9 +141,10 @@ Published as `valun` on [PyPI](https://pypi.org/project/valun/), `@fitzdoud/valu
 
 ## If your app cannot show approval prompts
 
-With approvals `ask` (valun 0.7.1's default; since 0.7.2 an invited join's, and `join --sandbox` uses `console`), the
+With approvals `ask` (valun 0.7.1's default; since 0.7.2 an invited join's; since 0.7.3 `join --sandbox` asks whether a
+person will approve, console or none), the
 Valun MCP server asks you through your app, with the exact terms (MCP elicitation), before your agent signs a
-commitment: an offer, counter-offer or acceptance, the IOU or payment by transfer at a delivery, a guarantee offer, an
+commitment: an offer, counter-offer or acceptance, the note or payment by transfer at a delivery, a guarantee offer, an
 honor or release of a guarantee, or loosening a limit it recorded. No interactive app has been verified with it yet. An
 app that cannot show that
 prompt gets `approval_unavailable` for every commitment, and nothing is
@@ -199,7 +200,7 @@ package's version does not say what a live deployment runs: its `GET /pilot/v1/i
 - **A note redeemed on chain** by a newcomer agent with the zero-dependency JavaScript client, which signed the
   redemption natively: 3,000,000 nanoERG of sandbox-exact's note against its 0.2 tERG reserve, tx
   `efc019732cae1c0eeda7c084e72c1ec25230847f405d5ab836f47cd94b706edd` (block 639915).
-- **Netting anchored**: three loops of debt transfers and set-offs on committed edges, committed by the tracker box
+- **Netting anchored**: three loops of transfers and set-offs on committed edges, committed by the tracker box
   update `7831b076c5dec097c4abce6c6fcae397a4e9f52eddab99f29be36d9e0a6f2e26` (block 639922). Tracker NFT
   `dca981fc5d4842caf230e1b3a83cd3289663afc61b10b3f53678ccdefea5add2`. The valun 0.5.0 package from PyPI redeemed a
   note too, signed natively by the Python client: `b2ab4270437328b768ed24e225f240a4991eff81ab601af7f54124dbc0cd9597`
@@ -207,8 +208,8 @@ package's version does not say what a live deployment runs: its `GET /pilot/v1/i
 
 ## Proven on the pilot network (retired 2026-11-13; synthetic units)
 - **Official MCP SDK client** (`mcp==2.3.0`) through `valun mcp`: full deal with bea-briefs, both commitments approved
-  through MCP elicitation showing the exact terms; credit note recorded and verified. `evidence/mcp-sdk-deal-*.json`
-- **A Hermes agent with no Valun plugin**, using only the MCP server: offer, delivery, measured review, credit note in
+  through MCP elicitation showing the exact terms; note recorded and verified. `evidence/mcp-sdk-deal-*.json`
+- **A Hermes agent with no Valun plugin**, using only the MCP server: offer, delivery, measured review, note in
   1.5 minutes. `evidence/hermes-mcp-deal-20261107T004004Z/`
 - **Deterministic sandbox seller** (no AI model): a text-stats job ordered, delivered and verified byte for byte in
   22 s. An LLM agent over MCP bought from it on the third try; the two failures (text format, buyer/seller role)
@@ -231,12 +232,12 @@ package's version does not say what a live deployment runs: its `GET /pilot/v1/i
   that fails closed), behaving exactly like the Python core over 88 recorded scenarios.
 - **The server is tested to the limit** (in the server's own repository): an adversarial suite (45 tests), a robustness
   suite, and a seeded soak test (800 random actions by 16 participants, valid and invalid mixed) whose invariants all
-  hold: no 5xx, tracker totals equal the credit notes issued, nobody owes more than their owner allows, every agreement
+  hold: no 5xx, tracker totals equal the notes issued, nobody owes more than their owner allows, every agreement
   accepted by the other party with a valid signature.
 
 ## Integration limits
 
-- A guarantee is the backer's capped promise, paid with its own IOU if the creditor calls it: nothing is locked, and it
+- A guarantee is the backer's capped promise, paid with its own note if the creditor calls it: nothing is locked, and it
   is worth what the backer's reserve and record make it worth. It is not a payment, and it does not cure disputed
   work. Collateral-backed guarantees are not built yet.
 - What the server reports about backing, budget cards and checks is the server's word, not a proof on chain. `valun

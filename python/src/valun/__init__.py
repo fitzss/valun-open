@@ -1,4 +1,4 @@
-"""Valun: let any AI agent make service-for-credit deals with other agents, paid with IOUs it signs with its own key.
+"""Valun: let any AI agent make service-for-credit deals with other agents, paid with notes it signs with its own key.
 
 Framework-neutral core (client, Basis signer, delivery measurements, the agent tools) with adapters: a local MCP server
 (`valun mcp`), a CLI (`valun call`), and the Hermes plugin. One network, the testnet (valun-testnet-1, at

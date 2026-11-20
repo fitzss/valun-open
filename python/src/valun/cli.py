@@ -59,8 +59,8 @@ CLIENT_PROMPT_CAVEAT = ('This asks only in an app that confirms each tool call i
 # What console holds for the owner, and what it never holds, in the owner's words (the approval semantics of 2026-11-17,
 # verified on staging): join's console line, `valun config approvals console` and `valun console`.
 CONSOLE_HOLDS = ("your agent's offers and counter-offers, its acceptances (taking a job included), its guarantee offers, "
-                 'and the IOU or payment by transfer it signs when it accepts a delivery')
-CONSOLE_NEVER = ("honoring a guarantee call (your agent's own IOU, recorded at once), accepting, calling and releasing "
+                 'and the note or payment by transfer it signs when it accepts a delivery')
+CONSOLE_NEVER = ("honoring a guarantee call (your agent's own note, recorded at once), accepting, calling and releasing "
                  'guarantees, deliveries, declines, withdrawals and disputes, your agent loosening or clearing a limit it '
                  'recorded (never past your mandate), and the consents its client signs by itself')
 # What a decision leaves, as the server does it (lib/pilot/core.mjs decideApproval and decidePayByTransfer; agent.
@@ -69,8 +69,8 @@ CONSOLE_NEVER = ("honoring a guarantee call (your agent's own IOU, recorded at o
 # or payment by transfer was rejected waits until its timestamp + 1 h + 2 min (novation FALLBACK_MARGIN_MS).
 CONSOLE_DECIDES = ('Your agent has already signed each one; nothing of it binds anyone or reaches the tracker until you '
                    'approve. Approving signs nothing new: the server releases exactly what your agent signed. Rejecting '
-                   'does not unsign it: the server keeps the signed offer, acceptance or IOU on record, and a rejected '
-                   'IOU (a bound note, which your agent signs on the testnet) could still be recorded by the tracker '
+                   'does not unsign it: the server keeps the signed offer, acceptance or note on record, and a rejected '
+                   'note (a bound note, which your agent signs on the testnet) could still be recorded by the tracker '
                    'until an hour after your agent signed it, so paying that deal by transfer waits until 1 hour and 2 '
                    "minutes after your agent signed it (your agent's Valun client waits a minute longer than the time "
                    'the owner console shows, as a margin for clocks that differ). A rejected payment by transfer is the '
@@ -90,7 +90,7 @@ JOIN_APPROVALS = {
             '`{valun} call`. If you decline, nothing is signed. No interactive app has been verified with that form yet: '
             'where your app cannot show it nothing is signed, and `{valun} --profile {name} config approvals console '
             '--owner-token-file {token_file}`{token_note} lets your agent sign at once and holds its offers, acceptances and '
-            'guarantee offers, and the IOU or payment at each delivery, for you in the owner console '
+            'guarantee offers, and the note or payment at each delivery, for you in the owner console '
             '({server}/pilot#owner) instead (never an honor of a guarantee call or a consent).'),
     'client-prompt': ("Approvals: client-prompt. Your MCP app's own tool confirmation is the only approval: whatever it "
                       "lets run is signed at once; never 'always allow' the Valun signing tools. " + CLIENT_PROMPT_CAVEAT),
@@ -1149,7 +1149,7 @@ def _join_steps(args, store, c, j, server, handle, owner, step, key=None):
     finished, name, v = True, _profile(args), _valun()
     if circulating:
         print(f'Clearing: {clearing}. ' + ('Your Valun client signs set-offs that leave your net position unchanged, and '
-                                           'transfers of your own debt, by itself; ' if clearing == 'auto' else
+                                           'transfers of notes you issued to a new holder, by itself; ' if clearing == 'auto' else
                                            'set-offs are off in your owner mandate; ')
               + (f'it also accepts payments by transfer (notes your owner mandate accepts), and signs them in the '
                  f'background while `{v} --profile {name} mcp` (consent_loop on) or `{v} --profile {name} clearing watch` '
@@ -1554,12 +1554,12 @@ def _settle_enrolled(args, store, c, server, context):
     see = f'See `{v} --profile {name} policy show`; change it with `{v} --profile {name} config consents.<role> on|off`.'
     if settings and wrote and sandbox:
         lines.append('Settings, as a sandbox join writes them: your client signs set-offs that leave your net position '
-                     'unchanged, transfers of your own debt, and payments to you by transfer by itself, as far as your '
+                     'unchanged, transfers of notes you issued to a new holder, and payments to you by transfer by itself, as far as your '
                      f'owner mandate allows, and signs them in the background while `{v} --profile {name} mcp` (consent_loop '
                      f'on) or `{v} --profile {name} clearing watch` runs. ' + see)
     elif settings and wrote:
         lines.append('Settings, as a join writes them: your client signs set-offs that leave your net position unchanged '
-                     'and transfers of your own debt by itself, as far as your owner mandate allows; payments to you by '
+                     'and transfers of notes you issued to a new holder by itself, as far as your owner mandate allows; payments to you by '
                      'transfer are off until you turn them on. ' + see)
     elif settings:
         lines.append(f'Settings: the consent policy this profile had is kept. {see}')
@@ -1681,7 +1681,7 @@ def _console_words(mode):
                 'seconds while it is open.')
     return (f'Approvals: {mode}. The console holds only what your owner mandate holds, as the console shows it: your '
             "agent's offers, counter-offers, acceptances and guarantee offers priced above Ask me above, and, while Review "
-            'deliveries is on, the IOU or payment by transfer it signs when it accepts a delivery. Where valun set your '
+            'deliveries is on, the note or payment by transfer it signs when it accepts a delivery. Where valun set your '
             'mandate (at join, or when this profile left console approvals), Ask me above is your per-deal limit, so '
             'nothing waits there by its price; leaving console keeps Review deliveries on until you untick it there. '
             "There you also change your agent's limits, or revoke it.")
@@ -2221,7 +2221,7 @@ def cmd_config(args):
             else:
                 print(f'Owner mandate updated: offers, counter-offers, acceptances and guarantee offers up to '
                       f'{vc.amount_text(cap, _unit(store))} no longer wait in the console.'
-                      + (' Accepted deliveries still wait for your review (review_deliveries is on): the IOU or payment by '
+                      + (' Accepted deliveries still wait for your review (review_deliveries is on): the note or payment by '
                          'transfer your agent signs when it accepts a delivery is held for you until you approve it. Untick '
                          f'Review deliveries in the owner console ({server}/pilot#owner) if you no longer want it.'
                          if m.get('review_deliveries') else ''))
@@ -2434,7 +2434,7 @@ def cmd_call(args):
                     'ask (pass them with --json-file FILE to be asked here)' if piped else
                     'no person is at this terminal') + '. The owner can '
                 f'run `{_valun()} --profile {name} config approvals console --owner-token-file FILE` (the agent then signs at '
-                'once, and its offers, acceptances and guarantee offers, and the IOU or payment at each delivery, wait for '
+                'once, and its offers, acceptances and guarantee offers, and the note or payment at each delivery, wait for '
                 f'the owner in the owner console; FILE: the file holding the owner token) or `{_valun()} --profile {name} '
                 'config approvals none`.')}))
             return 3
@@ -2601,7 +2601,7 @@ def cmd_policy(args):
                                                              f"{k} {','.join(map(str, v)) or '[]'}"
                                                              for k, v in p['owner_mandate'].items()))
     for role, flag, what in (('setoff', 'auto_clear', 'set-offs (net-neutral)'),
-                             ('as_issuer', 'novate_own_debt', 'transfers of your own debt'),
+                             ('as_issuer', 'novate_own_debt', 'transfers of notes you issued'),
                              ('as_new_creditor', 'accept_transfers', 'payments to you by transfer')):
         print(f"  {what}: {'signed by your client' if p[role] else 'not signed'} (local {_shown_value((local or {}).get(role) if isinstance(local, dict) else None)}, "
               f"owner {flag} {_shown_value(mandate.get(flag))})")
@@ -2654,12 +2654,12 @@ HELD_ENDED_OTHER = 'the server ended it as {state} before it reached the tracker
 # IOU of the deal acknowledging the same state of the pair (at most one of the two can apply); after a payment by
 # transfer, a transfer through the same IOU at the same prior state (the same-prior exemption). Anything else waits
 # until the attempt's timestamp + 1 h + 2 min (MAX_AGE_MS + FALLBACK_MARGIN_MS), or until its edge moves past it.
-HELD_ENDED_NEXT = {'note': ("A new IOU of this deal can be signed now, while the pair's IOU is unchanged; paying it by "
-                            'transfer waits until after {free} ({margin}), or until your client sees this IOU move past '
+HELD_ENDED_NEXT = {'note': ("A new note of this deal can be signed now, while the pair's note is unchanged; paying it by "
+                            'transfer waits until after {free} ({margin}), or until your client sees this note move past '
                             'it'),
-                   'transfer': ('A payment through the same IOU at the same prior state can be signed now; your own IOU '
+                   'transfer': ('A payment through the same note at the same prior state can be signed now; your own note '
                                 'or any other payment of this deal waits until after {free} ({margin}), or until your '
-                                'client sees that IOU move past it')}
+                                'client sees that note move past it')}
 HELD_ENDED = {'alive': 'not applied ({why}). {next}',
               'dead': 'did not apply ({why})'}
 
@@ -2678,10 +2678,10 @@ def _attempt_line(c, r):
     i, rcp = (r['edge'].split('>') + [''])[:2]
     when = datetime.fromtimestamp(r['timestamp'] / 1000, timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
     if r['route'] == 'note':
-        what = (f"your credit note to {_who_key(c, rcp)}: your debt {r['prior'] if r['prior'] is not None else '?'} -> "
+        what = (f"your note to {_who_key(c, rcp)}: its total {r['prior'] if r['prior'] is not None else '?'} -> "
                 f"{r['total']} {c.unit}")
     else:
-        what = (f"paying with the note of {_who_key(c, i)}: your claim {r['prior'] if r['prior'] is not None else '?'} -> "
+        what = (f"paying with the note of {_who_key(c, i)}: its total {r['prior'] if r['prior'] is not None else '?'} -> "
                 f"{r['total']} {c.unit}")
     sid = f", server id {r['attempt_id']}" if r.get('attempt_id') else ''
     held = r.get('server_ended') if isinstance(r.get('server_ended'), dict) else None
@@ -2693,8 +2693,8 @@ def _attempt_line(c, r):
         why = HELD_ENDED_WHY.get(held.get('state')) or HELD_ENDED_OTHER.format(state=_terminal_text(held.get('state'), 40))
         if r['route'] == 'note' and r['timestamp'] % 1000 != va.nv.BOUND_MS:
             # an ordinary note never expires (novation._expires): only its edge moving past it ends it
-            nxt = ("A new IOU of this deal can be signed now, while the pair's IOU is unchanged; paying it by transfer "
-                   'waits until your client sees this IOU move past it (an ordinary note has no maximum age)')
+            nxt = ("A new note of this deal can be signed now, while the pair's note is unchanged; paying it by transfer "
+                   'waits until your client sees this note move past it (an ordinary note has no maximum age)')
         else:
             nxt = HELD_ENDED_NEXT.get(r['route'], HELD_ENDED_NEXT['note']).format(free=va.free_after(r['timestamp']),
                                                                                  margin=va.MARGIN_WORDS)
@@ -2729,8 +2729,8 @@ def _edges_now(c):
 
 # Why a resolution changes only your client's records (Client.resolution_plan local), for `valun attempts resolve`.
 LOCAL_WHY = {
-    'note': 'The server holds no payment attempt for a credit note: only your client\'s records change (your owner token '
-            'is checked first, used once and not stored).',
+    'note': 'The server holds no payment attempt for a note you issued: only your client\'s records change (your owner '
+            'token is checked first, used once and not stored).',
     'no_circulation': 'This server offers no circulating credit, so only your client\'s records change (your owner token '
                       'is checked first, used once and not stored).',
     'no_server_id': "Your client did not record the server's id of this transfer (its request got no answer, or the "
@@ -3055,7 +3055,7 @@ def cmd_sandbox(args):
         if console:
             print(f'Console approvals: the tour asks nothing here. What it signs for your agent waits for you in the owner '
                   f'console ({_server(args, store)}/pilot#owner; `{_console_command(args)}` opens it): its offers and '
-                  'acceptances, the IOUs it pays with (approve each by the deadline its card shows, within the hour), and '
+                  'acceptances, the notes it pays with (approve each by the deadline its card shows, within the hour), and '
                   'its payments by transfer (steps 2 and 5), which wait only 20 minutes before they end (the tour then '
                   'signs them again). Approve '
                   'each there when the tour says it waits, and the tour goes on by itself.', flush=True)
@@ -3709,7 +3709,7 @@ def main(argv=None):
                         'is active; on an open network (valun.tech) it deals with any agent, otherwise only with the '
                         'sandbox agents')
     j.add_argument('--clearing', choices=['auto', 'off'], default=None,
-                   help='circulating credit: let set-offs clear your cycles of debts (auto, the default) or not (off); sets '
+                   help='circulating credit: let set-offs clear your loops of notes (auto, the default) or not (off); sets '
                         "auto_clear in your owner mandate (when the server's features cannot be read, it is not set and "
                         'join exits 1; with off your client then signs no set-off by itself)')
     j.add_argument('--owner-token-file',
@@ -3858,7 +3858,7 @@ def main(argv=None):
     bu.add_argument('--text')
     bu.add_argument('--text-file')
     bu.add_argument('--pay-with', metavar='ISSUER',
-                    help='circulating credit: pay with a note you hold from ISSUER (handle or id) instead of your own credit note')
+                    help='circulating credit: pay with a note you hold from ISSUER (handle or id) instead of your own note')
     bu.add_argument('--server')
     ea = sbs.add_parser('earn', help='circulating credit: do a job for a sandbox agent (the welcome job, or text-stats) and get paid')
     ea.add_argument('--server')

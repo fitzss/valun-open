@@ -209,7 +209,7 @@ test('valun_propose and valun_respond: the price and the hours are JSON integers
 test('valun_propose and valun_respond: the success messages name the amount signed; a proposal open past its deadline is refused', async () => {
   let s = server();
   let r = await agent(s).call('valun_propose', PROPOSE);
-  assert.equal(r.if_agreed, 'After you accept their delivery you issue them a credit note of 7 PC (you will owe them; not settled).');
+  assert.equal(r.if_agreed, 'After you accept their delivery you issue them a note of 7 PC (you will owe them; not settled).');
   assert.deepEqual(s.signed().price, {amount: 7, unit: 'PC'});
   s = server(offer(6, 6));
   r = await agent(s).call('valun_respond', {...COUNTER, title: 'Shorter summary'});

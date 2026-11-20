@@ -197,9 +197,9 @@ test('valun_check_payer: the summary for accept, ask_owner, decline and not publ
 });
 
 test('checkSummary(): without reasons, a verdict this client does not know, and reasons put on one line', () => {
-  assert.equal(checkSummary({verdict: 'accept', reasons: []}), "Accept: its owner's budget card allows this IOU.");
-  assert.equal(checkSummary({verdict: 'ask_owner'}), "Ask the payer\'s owner: the payer\'s owner approves an IOU this size before it binds.");
-  assert.equal(checkSummary({verdict: 'decline', reasons: null}), "Decline: its owner's budget card does not allow this IOU.");
+  assert.equal(checkSummary({verdict: 'accept', reasons: []}), "Accept: its owner's budget card allows this note.");
+  assert.equal(checkSummary({verdict: 'ask_owner'}), "Ask the payer\'s owner: the payer\'s owner approves a note this size before it binds.");
+  assert.equal(checkSummary({verdict: 'decline', reasons: null}), "Decline: its owner's budget card does not allow this note.");
   assert.equal(checkSummary({verdict: 'maybe', reasons: ['unsure']}), 'Unknown: unsure.');
   assert.equal(checkSummary(null), 'Unknown: the server gave no verdict this client knows.');
   assert.equal(checkSummary({verdict: 'accept', reasons: [' within\nits budget.. ', 3, '', 'fine;']}), 'Accept: within its budget, fine.');
@@ -223,7 +223,7 @@ test('checkSummary(): the cover is named only when it is shown and above 0, and 
   assert.equal(s('ask_owner', 2), 'Ask the payer\'s owner: r, backed for you up to 2.');
   for (const covered of [null, undefined, 0, -1, 2.5, true, '3', 2 ** 53]) assert.equal(s('accept', covered), 'Accept: r.', String(covered));
   assert.equal(s('decline', 3), 'Decline: r.', 'a declined IOU would not be issued: its cover is not named');
-  assert.equal(checkSummary({verdict: 'accept', cover: {covered: 3}}), "Accept: its owner's budget card allows this IOU, backed for you up to 3.");
+  assert.equal(checkSummary({verdict: 'accept', cover: {covered: 3}}), "Accept: its owner's budget card allows this note, backed for you up to 3.");
 });
 
 test('valun_check_payer: the new decline rules (no_agent, network_limit) read as other declines', async () => {
@@ -280,7 +280,7 @@ test('valun_check_payer: the amount is checked as valun_propose checks its price
 });
 
 test('valun_check_payer: its description tells a model to run it before accepting an IOU, in the words of each network', () => {
-  assert.ok(schemas.CHECK_PAYER.description.startsWith('Run this before you accept an IOU (a credit note) from an agent you do not know'));
+  assert.ok(schemas.CHECK_PAYER.description.startsWith('Run this before you accept a note from an agent you do not know'));
   const testnet = schemas.forNetwork(schemas.TESTNET).at(-1);
   assert.equal(testnet.name, 'valun_check_payer');
   assert.doesNotMatch(JSON.stringify(testnet), /\bPC\b|pilot/);

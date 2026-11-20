@@ -34,8 +34,8 @@ TOUR_TOTALS = {1: {'sandbox-exact -> you': 3},
                4: {'sandbox-exact -> you': 0, 'you -> sandbox-exact': 0, 'sandbox-mallory -> you': 2},
                5: {'sandbox-exact -> you': 0, 'you -> sandbox-exact': 0, 'sandbox-mallory -> you': 0}}
 TOUR_DONE = ('The tour is complete: you earned 6 PC and spent 6 PC (4 by transfer, 2 with your own note), and set-offs '
-             'cancelled 2 PC of your claims and 2 PC of your debts without changing your net position. You can keep trading '
-             'with the sandbox agents.')
+             'cleared 2 PC of the notes you hold and 2 PC of the notes you issued, without changing your net position. You '
+             'can keep trading with the sandbox agents.')
 # What a profile 's' that has not joined tells its owner to run (the 0.7.2 clean-user test): the sandbox join, complete
 # as written but for its placeholders, then its uvx form.
 SANDBOX_JOIN = 'valun --profile s join --sandbox --handle YOUR-HANDLE --operator "YOUR NAME"'
@@ -296,7 +296,7 @@ class ConsoleByDefault(Cli):
         # the 0.7.2 review: the tour's payments by transfer (steps 2 and 5) wait 20 minutes only
         self.assertIn(f'Console approvals: the tour asks nothing here. What it signs for your agent waits for you in the owner '
                       f'console ({SERVER}/pilot#owner; `valun --profile s console` opens it): its offers and acceptances, the '
-                      'IOUs it pays with (approve each by the deadline its card shows, within the hour), and its payments by '
+                      'notes it pays with (approve each by the deadline its card shows, within the hour), and its payments by '
                       'transfer (steps 2 and 5), which wait only 20 minutes before they end (the tour then signs them '
                       'again).', out)
 
@@ -368,10 +368,10 @@ class ConsoleByDefault(Cli):
         # the RC's staging test (2026-11-18): the console names the server's time, a minute sooner, so this one says
         # what it is
         self.assertIn(': not applied (the server held it for your owner, who rejected it in the owner console, and never '
-                      "sent it on). A new IOU of this deal can be signed now, while the pair's IOU is unchanged; paying it by "
+                      "sent it on). A new note of this deal can be signed now, while the pair's note is unchanged; paying it by "
                       "transfer waits until after 2026-11-18T00:12:33.997Z (your Valun client's time, a minute after the "
                       "server's, which the owner console shows, as a margin for clocks that differ), or until your client "
-                      'sees this IOU move past it', line)
+                      'sees this note move past it', line)
         self.assertNotIn('you resolved it', line)
         self.assertIn('did not apply (the server held it for your owner and never sent it on: its hold expired before your '
                       'owner decided)', cli._attempt_line(c, dict(row, state='dead', server_ended={'state': 'void_expired'})))
@@ -380,10 +380,10 @@ class ConsoleByDefault(Cli):
         transfer = dict(row, route='transfer', timestamp=1_794_957_033_999, edge=f"{'03' + '33' * 32}>{'02' + '11' * 32}",
                         server_ended={'state': 'rejected', 'approval_id': 'va_27df22079678', 'at': None})
         line = cli._attempt_line(c, transfer)
-        self.assertIn('A payment through the same IOU at the same prior state can be signed now; your own IOU or any other '
+        self.assertIn('A payment through the same note at the same prior state can be signed now; your own note or any other '
                       f'payment of this deal waits until after 2026-11-18T00:12:33.999Z ({va.MARGIN_WORDS}), or until your '
-                      'client sees that IOU move past it', line)
-        self.assertNotIn('A new IOU of this deal can be signed now', line)
+                      'client sees that note move past it', line)
+        self.assertNotIn('A new note of this deal can be signed now', line)
         # one approved after its hour was sent, and refused: never "never sent it on"
         late = cli._attempt_line(c, dict(row, state='dead', server_ended={'state': 'novation_expired'}))
         self.assertIn('did not apply (your owner approved it after its hour, and the tracker refused it)', late)
@@ -1590,8 +1590,8 @@ class Tour(Cli):
         self.assertEqual(len(setoffs), 2)                                         # two 2-cycles, 2 PC each, signed by S
         self.assertEqual(w.position()['cleared_by_setoff'], 4)
         self.assertIn('\nThe tour is complete: you earned 6 PC and spent 6 PC (2 by transfer, 4 with your own note), and '
-                      'set-offs cancelled 4 PC of your claims and 4 PC of your debts without changing your net position. You '
-                      'can keep trading with the sandbox agents.\n', out)
+                      'set-offs cleared 4 PC of the notes you hold and 4 PC of the notes you issued, without changing your '
+                      'net position. You can keep trading with the sandbox agents.\n', out)
 
     def test_the_tour_asks_at_the_terminal_and_stops_when_declined(self):
         self.join()
@@ -2150,7 +2150,7 @@ class AttemptsCommands(Cli):
         self.assertEqual(rc, 0, out)
         self.assertIn(f'deal {self.deal}', out)
         self.assertIn('#1 paying with the note of ', out)
-        self.assertIn('your claim 3 -> 1 PC', out)
+        self.assertIn('its total 3 -> 1 PC', out)
         self.assertIn('server id vt_0123456789abcdef: can still apply', out)
 
     def test_list_first_learns_what_the_owner_decided(self):
@@ -2173,7 +2173,7 @@ class AttemptsCommands(Cli):
         rc, out = self.run_cli('attempts', 'list')
         self.assertEqual(rc, 0, out)
         self.assertIn('not applied (the server held it for your owner, who rejected it in the owner console, and never sent '
-                      'it on). A payment through the same IOU at the same prior state can be signed now; your own IOU or any '
+                      'it on). A payment through the same note at the same prior state can be signed now; your own note or any '
                       f'other payment of this deal waits until after {va.free_after(self.T)}', out)
         self.assertEqual(self.disk()['transfer_attempts'][deal][0]['outcome'], 'not_applied')
 
@@ -2225,7 +2225,7 @@ class AttemptsCommands(Cli):
         w.set_edge(S_ID, M_ID, 1, ts + 1001, kind='setoff', ref='vs_0123456789abcdef', signature=sign_note(S, mk, 1, ts + 1001))
         rc, out = self.run_cli('attempts', 'list')
         self.assertEqual(rc, 0, out)
-        self.assertIn('#1 your credit note to ', out)
+        self.assertIn('#1 your note to ', out)
         self.assertIn('MAY HAVE APPLIED', out)
         with self.assertRaises(vc.ValunError) as e:
             self.client().complete(did)
@@ -2233,7 +2233,7 @@ class AttemptsCommands(Cli):
         rc, out = self.run_cli('attempts', 'resolve', did, '#1', '--not-applied', '--owner-token-file', self.token_file,
                                tty=True, answers=['y'])                # one confirmation: the server holds nothing here
         self.assertEqual(rc, 0, out)
-        self.assertIn('The server holds no payment attempt for a credit note', out)
+        self.assertIn('The server holds no payment attempt for a note', out)
         self.assertEqual(w.resolutions, [])
         self.assertIn('GET /pilot/v1/owner', w.requests())           # the owner token was checked
         self.assertEqual(self.disk()['transfer_attempts'][did][0]['outcome'], 'not_applied')
@@ -2279,7 +2279,7 @@ class AttemptsCommands(Cli):
         for state, why in (('void_rejected', 'your owner rejected it, before anyone else signed'),
                            ('cancelled', 'your client cancelled it while it collected signatures')):
             line, out = self.r22(state)
-            self.assertIn('your claim 3 -> 1 PC', line)
+            self.assertIn('its total 3 -> 1 PC', line)
             self.assertTrue(line.endswith(f': ended by the server ({state}: {why}), which says it never reached the tracker, '
                                           "so it did not apply; your client cannot check that on the tracker, so it still "
                                           'pays this deal no more by itself'), line)
@@ -2573,7 +2573,7 @@ class AttemptsCommands(Cli):
         self.write(disk)
         rc, out = self.run_cli('attempts', 'list')
         self.assertEqual(rc, 0, out)
-        self.assertIn('your claim 3 -> 2 PC', [x for x in out.splitlines() if 'MAY HAVE APPLIED' in x][0])
+        self.assertIn('its total 3 -> 2 PC', [x for x in out.splitlines() if 'MAY HAVE APPLIED' in x][0])
         self.assertIn('`valun --profile s attempts resolve DEAL ATTEMPT --applied`', out)    # FX3-PY: names the profile
         # double quotes, which cmd reads as PowerShell and bash do (the RC's review, R2-OTHER-4: cmd passed '#1' with its
         # single quotes, which the client refuses as no attempt). The list shows each attempt bare (#1), so the advice
@@ -2650,7 +2650,7 @@ class AttemptsCommands(Cli):
             rc, out = self.run_cli('attempts', 'resolve', did, '#1', '--not-applied', '--owner-token-file', self.token_file,
                                    tty=True)
         self.assertEqual(rc, 1, out)
-        self.assertIn('The server holds no payment attempt for a credit note', out)     # the local-only plan was shown
+        self.assertIn('The server holds no payment attempt for a note', out)     # the local-only plan was shown
         self.assertEqual([p for p, _n in self.asked], ['Resolve it? [y/N] '])           # one confirmation, as for a note
         self.assertEqual(json.loads(out.strip().splitlines()[-1])['error'], 'attempt_changed')
         self.assertNotIn('GET /pilot/v1/owner', w.requests()[self.asked[-1][1]:])      # no owner check after it

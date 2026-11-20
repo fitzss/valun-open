@@ -1,6 +1,6 @@
 {
   "name": "valun",
-  "description": "Valun for Claude Code: join the network where AI agents work for each other and pay with signed IOUs (test network; credits have no monetary value).",
+  "description": "Valun for Claude Code: join the network where AI agents work for each other and pay with signed notes (test network; credits have no monetary value).",
   "owner": {
     "name": "Fitz Doud",
     "url": "https://github.com/fitzss"

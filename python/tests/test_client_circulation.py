@@ -2714,16 +2714,16 @@ class WhatARejectionLeaves(Base):
         c, T, d = self.rejected('note')
         free = self.va.free_after(T)
         text = self.va.owner_decisions(d, att(self.store.state))[0]['what_this_means']
-        self.assertIn('Your Valun client counts it as not applied: a new IOU of this deal may be signed now, and paying '
+        self.assertIn('Your Valun client counts it as not applied: a new note of this deal may be signed now, and paying '
                       f"this deal by transfer waits until after {free} ({self.va.MARGIN_WORDS}), or until your client sees "
-                      "this pair's IOU move past it.", text)
+                      "this pair's note move past it.", text)
         self.assertNotIn('does not stop a new payment', text)
         first = self.refused_until(lambda: c.pay_by_transfer(DEAL, A_ID))
         self.assertEqual(self.va.iso_ms(first - 1), free)          # signed only after the time named
         rows = c.payment_attempts(edges=c.sync_edges()['edges'])
         line = self.cli._attempt_line(c, rows[0])
         self.assertIn('not applied (the server held it for your owner, who rejected it in the owner console, and never sent '
-                      "it on). A new IOU of this deal can be signed now, while the pair's IOU is unchanged; paying it by "
+                      "it on). A new note of this deal can be signed now, while the pair's note is unchanged; paying it by "
                       f'transfer waits until after {free}', line)
         self.assertEqual(c.complete(DEAL)['status'], 'note_issued')   # and a new IOU is signed at once
 
@@ -2732,18 +2732,18 @@ class WhatARejectionLeaves(Base):
         free = self.va.free_after(T)
         text = self.va.owner_decisions(d, att(self.store.state))[0]['what_this_means']
         self.assertIn('Nothing moved, and the Valun server deleted your signatures of it (it keeps only their hashes). The '
-                      'deal is back to delivered: pay again through the same IOU at once while it is unchanged (it waits '
-                      f'for your owner again), or with your own IOU or another IOU after {free} ({self.va.MARGIN_WORDS}), '
-                      'or once your client sees that IOU move past it, or dispute the delivery.', text)
+                      'deal is back to delivered: pay again through the same note at once while it is unchanged (it waits '
+                      f'for your owner again), or with your own note or another note after {free} ({self.va.MARGIN_WORDS}), '
+                      'or once your client sees that note move past it, or dispute the delivery.', text)
         self.assertNotIn('does not stop a new payment', text)
         first = self.refused_until(lambda: c.complete(DEAL))           # the review's probe: a new IOU was refused
         self.assertEqual(self.va.iso_ms(first - 1), free)
         rows = c.payment_attempts(edges=c.sync_edges()['edges'])
         self.assertEqual((rows[0]['route'], rows[0]['state']), ('transfer', 'alive'))
         line = self.cli._attempt_line(c, rows[0])
-        self.assertIn('A payment through the same IOU at the same prior state can be signed now; your own IOU or any other '
+        self.assertIn('A payment through the same note at the same prior state can be signed now; your own note or any other '
                       f'payment of this deal waits until after {free}', line)
-        self.assertNotIn('A new IOU of this deal can be signed now', line)
+        self.assertNotIn('A new note of this deal can be signed now', line)
         self.clock.now += 5000
         self.assertEqual(c.pay_by_transfer(DEAL, A_ID)['status'], 'completion_awaiting_owner')   # through the same IOU
 
