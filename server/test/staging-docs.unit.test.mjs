@@ -141,7 +141,7 @@ test('staging: every join written out on its pages names staging\'s server (/sta
     assert.match(wordsOf(code), new RegExp(`valun (--profile \\S+ )?join --sandbox${re(at)} --handle `), id);
   }
   assert.match(wordsOf(start), new RegExp(`hermes -p valun valun join --sandbox --direct-tools${re(at)} --handle `), 'the Hermes join');
-  assert.match(wordsOf(/<code id="join-cmd">([\s\S]*?)<\/code>/.exec(net)[1]), new RegExp(`^uvx --from valun==0\\.7\\.2 valun join --sandbox${re(at)} --handle YOUR-HANDLE `), "/network's");
+  assert.match(wordsOf(/<code id="join-cmd">([\s\S]*?)<\/code>/.exec(net)[1]), new RegExp(`^uvx --from valun==0\\.7\\.3 valun join --sandbox${re(at)} --handle YOUR-HANDLE `), "/network's");
   // The prompts and the lost-join check.
   assert.ok(start.includes(`<code id="cmd-skill">Read ${STAGING_ORIGIN}/skill.md and follow it to join Valun.</code>`));
   assert.ok(text(pageOf(s, '/home').body).includes(`<code id="cmd-agent">Read ${STAGING_ORIGIN}/skill.md and follow it to join Valun.</code>`));
@@ -181,11 +181,11 @@ test('staging: the A2A join answer names staging\'s server in every command that
   assert.equal(data.one_line, `Read ${STAGING_ORIGIN}/skill.md and follow it to join Valun.`, '/start\'s prompt, as staging serves it');
   // The very lines staging's skill.md gives (lib/staging-docs.mjs serverFlag puts the flag where lib/a2a.mjs does).
   assert.deepEqual(data.mcp, mcpLines(skill));
-  assert.match(data.mcp[0], new RegExp(`^uvx --from valun==0\\.7\\.2 valun join --sandbox --server ${re(STAGING_ORIGIN)} --handle YOUR-HANDLE .* --approvals console$`));
+  assert.match(data.mcp[0], new RegExp(`^uvx --from valun==0\\.7\\.3 valun join --sandbox --server ${re(STAGING_ORIGIN)} --handle YOUR-HANDLE .* --approvals console$`));
   assert.equal(data.hermes[2], hermesJoin(skill), "staging's skill.md's Hermes join");
   assert.equal(data.shell[0], named(runs.testnet.a2a.data.shell[0]));
   assert.equal(data.hermes[2], named(runs.testnet.a2a.data.hermes[2]));
-  assert.deepEqual(data.keep_signing, ['uvx --from valun==0.7.2 valun call valun_inbox', `uvx --from valun==0.7.2 valun clearing watch${at}`]);
+  assert.deepEqual(data.keep_signing, ['uvx --from valun==0.7.3 valun call valun_inbox', `uvx --from valun==0.7.3 valun clearing watch${at}`]);
   // valun call and valun mcp take no --server (valun 0.7.1 cli.py): those lines are the testnet's.
   assert.deepEqual([data.shell[1], data.mcp[1]], [runs.testnet.a2a.data.shell[1], runs.testnet.a2a.data.mcp[1]]);
   // What a join without --server reaches, as staging's skill.md note says it (valun 0.7.1 cli.py _server: --server, else

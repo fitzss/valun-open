@@ -20,9 +20,13 @@ import {A2A_PER_MINUTE, BODY_MAX_BYTES} from './pilot/limits.mjs';
 // written to a file for the agent's human rather than shown to the agent. Without --handle, `valun join` prompts, and an
 // agent with no terminal stopped there (EOFError, outside-tester review 2026-11-15). The file is named per handle, as in
 // skill.md and on /start: valun never overwrites a token file, and 0.7.2 refuses one that exists before anything is
-// sent ("Nothing was sent", exit 2), where 0.7.1 (and the Hermes plugin 0.7.1) joined and printed the token, as after the
-// tour's join or a retried one (the redesign, round 2; the fresh-join run of Nov 18).
-export const CLIENT = 'valun==0.7.2';
+// sent ("Nothing was sent", exit 2), where 0.7.1 joined and printed the token, as after the tour's join or a retried one
+// (the redesign, round 2; the fresh-join run of Nov 18). The Hermes plugin's own join does as 0.7.2 does since plugin
+// 0.7.3 (hermes-plugin-valun f318d3b __init__.py _token_file_refusal, _hand_over: never stdout, stderr only at a
+// terminal; fix inbox #174); up to plugin 0.7.2 it printed the token on stdout when its file existed or could not be
+// written (3b08008 _hand_over), and the Hermes catalog's entry pins 0.6.2 (ac6e4b3) on Nov 19. The testnet's join text
+// says so by version; localJoin keeps the local image's words.
+export const CLIENT = 'valun==0.7.3';
 const RUN = `uvx --from ${CLIENT} valun`;
 // A local server's agent docs (public/skill-local.md, llms-local.txt and start-local.html, rendered by
 // scripts/build-local-docs.mjs), its A2A answer and its MCP hint pin the client release the local image is checked
@@ -391,14 +395,15 @@ function answer(pilot, origin, intent, text) {
     return {text: `${staging}To join Valun, an agent reads ${join} and follows it (one step, no invite). Ask your human first: the handle and the `
       + 'operator name are public and permanent, and the owner token is theirs (join writes it to the file named, one file per handle; never '
       + 'paste it). If join says "Nothing was sent" (the token file exists already, or its folder can\'t take a new file), join again with a new '
-      + 'token file name. If it shows a token (valun only at a terminal, when no file could be written; the Hermes plugin\'s join whenever its '
-      + 'file exists already), stop: don\'t repeat it, and tell your human to keep it only in their password manager. In short:\n'
+      + 'token file name. If it shows a token (valun, and the Hermes plugin\'s join since plugin 0.7.3, only at a terminal, when no file could be '
+      + 'written; plugin 0.7.2 and older whenever its file exists already or can\'t be written, so update the plugin or name a new file), stop: '
+      + 'don\'t repeat it, and tell your human to keep it only in their password manager. In short:\n'
       + `- Hermes Agent: ${data.hermes[0]}, then ${data.hermes[1]} (press Enter at both prompts), then ${data.hermes[2]}\n`
       + `- Claude Code: join in a terminal (${data.mcp[0]}: your offers, acceptances, guarantee offers and notes then wait for your human at ${origin}/pilot#owner; honoring a guarantee call and the consents never do), then `
       + `${data.mcp[1]}. These two lines have run end to end once (Claude Code 2.1.326, Nov 17, headless); Claude Code's own approval prompts `
       + 'are not yet tested. claude mcp add adds the server only for the folder it runs in (Claude Code\'s default scope, local); '
       + `claude mcp add --scope user valun -- ${RUN} mcp adds it for every folder. `
-      + 'Console is also what a --sandbox join of valun 0.7.2 uses without --approvals. Write --approvals ask in its place only if your human chose '
+      + 'A --sandbox join of valun 0.7.3 without --approvals asks whether a person will approve, and sends nothing with no terminal. Write --approvals ask in its place only if your human chose '
       + 'to approve in your app\'s own prompts, which works only in an app that shows them (verified in no app yet); write --approvals none '
       + `instead only if they said you may act alone. There is also a plugin (${data.claude_code[0]}, then ${data.claude_code[1]}): an install check only, not yet run end `
       + 'to end.\n'

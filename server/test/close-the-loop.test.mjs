@@ -417,7 +417,7 @@ test('the landing claims no more than the evidence: test agents, how far each wa
   assert.ok(text.includes("Each person's client has to be running when the loop closes, so it can sign: valun mcp or the Hermes plugin does this, and a shell agent keeps valun clearing watch running, or checks its inbox, until the loop clears."));
   assert.doesNotMatch(text, /invite code|with an invite|an organizer/i);
   // Bring your agent: one released client, no invite, and how far each way was tested (the compatibility evidence).
-  assert.ok(text.includes('Three ways in, all on the same released client, valun==0.7.2. No invite is needed.'));
+  assert.ok(text.includes('Three ways in, all on the same released client, valun==0.7.3. No invite is needed.'));
   // The Claude Code run as its evidence has it (the team's record of the Nov 17 run): the join in a terminal,
   // the owner's side scripted, ask cancelled and client-prompt refused by headless Claude Code, its own prompts untested.
   for (const s of ["Tested so far One complete exchange in Claude Code 2.1.326, on Nov 17 (build 09875a4): the join in a terminal (CLI), claude mcp add, then a summary bought from house-scribe and paid with the agent's note. It ran headless (claude -p) with console approvals, and the owner's side was scripted: approvals through the owner console's API, and Claude Code's permission prompts answered by a script.",
@@ -432,12 +432,14 @@ test('the landing claims no more than the evidence: test agents, how far each wa
     "If your app shows MCP approval forms (elicitation), you can join with ask instead: valun mcp then sends a form through your app before each commitment, and if the form is cancelled or can't be shown, nothing is signed. Whether a person sees it depends on the app: no interactive app has been verified yet.",
     // Hermes asks through its own approval gate (hermes-plugin-valun 0.7.1: never run with --yolo)
     'By default Hermes asks you in the conversation before each commitment, through its own approval gate, so never run it with --yolo.',
-    'Tested so far End to end in a real Hermes (v0.23.1) with plugin 0.6.0, on Nov 13, by our QA bot. The current plugin, 0.7.1, is not yet verified in a real Hermes.',
+    // The current plugin: the default branch's version, as /start names it (0.7.3 since Nov 19, fix inbox #174), run end
+    // to end in a real Hermes by our QA bot on Nov 19 (Hermes v0.23.3, build 9616a37, --approvals none).
+    'Tested so far The current plugin, 0.7.3, end to end in a real Hermes (v0.23.3), on Nov 19 (build 9616a37), by our QA bot: the install, a join with --approvals none, a first hire and its set-off. Hermes asking you in the conversation, the default, was not part of that run.',
     // a shell agent: console or none, its human's choice (the lead's D10); the scripted runs with their dates and builds
     // (d11e6b4 for the newcomer run, 17:24-17:43 UTC; the QA bot's daily sweeps on Nov 16, 10:54 UTC, on 103b25f and on
     // Nov 17, 10:46 UTC, on 09875a4: 1b1f18f reached the testnet at about 14:44 UTC, after them)
     'A shell agent can\'t show you a prompt: it joins with console (you approve what it signs, its offers, acceptances, guarantee offers and the note at each delivery, in the owner console) or none (it acts alone within the limits), and it asks you which.',
-    "Tested so far The valun command is run by scripts: 0.7.1 by our QA bot daily (Nov 16-17, builds 103b25f and 09875a4), and by a Claude session acting as a newcomer on a clean profile (Nov 16, build d11e6b4); 0.7.2, the release this line runs, as a release candidate by the team on staging (Nov 17-18), not yet by our QA bot. No AI agent has yet been recorded following this line from start to finish. An AI agent of the team's (muse) used the valun command and the JS library end to end on Nov 16-17, a redemption included, after join and connection failures (known issues)."])
+    "Tested so far The valun command is run by scripts: 0.7.1 by our QA bot daily (Nov 16-17, builds 103b25f and 09875a4), and by a Claude session acting as a newcomer on a clean profile (Nov 16, build d11e6b4); 0.7.2 by our QA bot on the live testnet (Nov 19); 0.7.3, the release this line runs, as a release candidate by the team on staging (Nov 20), not yet by our QA bot. No AI agent has yet been recorded following this line from start to finish. An AI agent of the team's (muse) used the valun command and the JS library end to end on Nov 16-17, a redemption included, after join and connection failures (known issues)."])
     assert.ok(text.includes(s), s);
   assert.doesNotMatch(text, /the current build/, 'every label names its build');
   // Before you paste the one line: what following skill.md does (the lead's D9), skill.md first and live; approving in
@@ -447,7 +449,7 @@ test('the landing claims no more than the evidence: test agents, how far each wa
   const before = homeWords(/<div class="note before-paste">[\s\S]*?<\/div>/.exec(home)[0]);
   for (const s of ['Before you paste it', 'Read /skill.md first. It is served live, so it can change.',
     'Your agent will ask you for a handle and your name (both public and permanent), one line about what it offers, and whether you approve what it signs (in the owner console, the first tester\'s default, or in your app) or let it act alone.',
-    'It runs valun 0.7.2 from PyPI with uvx, and may offer to install uv.',
+    'It runs valun 0.7.3 from PyPI with uvx, and may offer to install uv.',
     'It makes its key, stored unencrypted in your Valun profile folder, and writes your owner token to a new file named for its handle, ~/valun-owner-token-YOUR-HANDLE.txt: move that file into your password manager.',
     "If join can't write it, join prints the token instead; your agent should stop, not repeat it, and tell you to keep it only in your password manager.",
     "In an MCP app it adds the valun server to the app's config and asks you to restart.",
@@ -481,7 +483,7 @@ test('the landing claims no more than the evidence: test agents, how far each wa
     'Runs the tracker and holds its key, which signs every tracker box and every redemption, so it can refuse one.',
     'Runs four agents: the practice agents sandbox-exact and sandbox-mallory (no AI) and the house agents house-scribe and house-reviewer (Claude).',
     // it writes what agents follow, and only the PyPI release is fixed
-    "Writes skill.md, which agents follow as instructions, and publishes the clients and plugins. valun==0.7.2 on PyPI can't change; skill.md and the plugins' latest versions can.",
+    "Writes skill.md, which agents follow as instructions, and publishes the clients and plugins. valun==0.7.3 on PyPI can't change; skill.md and the plugins' latest versions can.",
     // the admin mandate route sets any field, past the self-serve box (lib/pilot/core.mjs setMandate, by 'operator'), and
     // renewSandbox records each renewal as the operator's; only the last change is kept
     "Can change any part of an agent's mandate, including what waits for the owner (approve_above) and whose notes it accepts, beyond the self-serve limits. The owner console shows the last change as by: operator; routine renewals of the expiry are shown the same way, and no history is kept.",
@@ -499,7 +501,7 @@ test('the landing claims no more than the evidence: test agents, how far each wa
   assert.ok(text.includes("A guarantee is a promise, not collateral. A backer that honors a call pays with its own note. Once a backer pays, the same amount of the issuer's note is held, so the creditor isn't paid twice. The backer doesn't take over the claim."));
   assert.doesNotMatch(text, /held from the creditor|held for the backer/i);
   assert.ok(text.includes('A backer that honors a call pays with its own note; nothing is locked up.'));
-  assert.ok(text.includes('The documented 0.7.2 client stays within the server\'s checks; a hand-built client with an earlier redemption build (a dry run is enough) can go around them.'));
+  assert.ok(text.includes('The documented 0.7.3 client stays within the server\'s checks; a hand-built client with an earlier redemption build (a dry run is enough) can go around them.'));
   assert.ok(text.includes('holds the note until it is cleared in a loop, passed on, or redeemed if the agent posted a reserve.'));
   assert.ok(text.includes('Now a stranger that trusts the backer, or sees a reserve behind it, can say yes.'));
   assert.ok(text.includes('Almost every agent so far is ours.'));
