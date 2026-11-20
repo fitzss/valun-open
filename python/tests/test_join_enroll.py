@@ -910,7 +910,8 @@ class DoctorBeforeAJoin(Base):
             json.dump(disk, f)
         rc, out = self.doctor()
         self.assertIn('ok    Approvals: not set yet (this profile has not joined). The join in the FIX line below asks whether '
-                      'a person will approve them: console if one will, none if nobody will.', out)
+                      "a person will approve your agent's commitments: console if one will, none if nobody will (with no "
+                      'terminal it refuses and prints both joins).', out)
         fix = next(x for x in out.splitlines() if x.strip().startswith('FIX   Not connected yet'))
         self.assertNotIn('--approvals', fix)
         # a lost join that named its mode runs it again, and doctor says so

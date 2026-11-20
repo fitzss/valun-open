@@ -1,5 +1,5 @@
 {
- "what": "Recorded answers of GET /pilot/v1/participants/{payer}/check to the payee's own agent token, and what valun 0.7.2's valun_check_payer summary (check_summary / checkSummary) and `valun card check` exit code make of each. Both clients are tested on them: python/tests/test_budget_card.py (BothSides) and js/test/budget-card.test.js.",
+ "what": "Recorded answers of GET /pilot/v1/participants/{payer}/check to the payee's own agent token, and what valun 0.7.3's valun_check_payer summary (check_summary / checkSummary) and `valun card check` exit code make of each. Both clients are tested on them: python/tests/test_budget_card.py (BothSides) and js/test/budget-card.test.js.",
  "how": "The server's own code (lib/pilot/card.mjs checkPayer, over real HTTP: lib/http.mjs and lib/pilot/http.mjs) on the stub world of valun-app test/budget-card.unit.test.mjs (a stub tracker whose signatures verify; tracker v4 capabilities with anchored netting, circulating credit on), with PILOT_NETWORK=valun-testnet-1, a fixed clock (2026-11-15T19:00:00Z) and fixed ids: bob (vp_b0b0b0b0b0b0) pays, alice (vp_a1a1a1a1a1a1) is the payee whose agent token asks, erin (vp_e0e0e0e0e0e0) backs. Each participant's mandate: up to 5000000 a deal, 40000000 in all, plus what the case says. took_ms, the only value that differs from run to run, is written as 3. Two servers: valun-app 103b25f (fix inbox #87: the step's verdict from both sides, payer_side) and valun-app 89832cc, the server/ of this repository (no payer_side; the cover's words among the step's reasons; a payer without a card is 404 card_not_public).",
  "request": {
   "payer": "bob",
@@ -477,7 +477,7 @@
      ]
     }
    },
-   "summary": "Accept: Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 40000000 nanoERG (0.04 tERG) of 40000000 nanoERG (0.04 tERG) left. Backed for you up to 2000000 nanoERG (0.002 tERG) by a backer not named here, backed for you up to 2000000.",
+   "summary": "Accept: Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 40000000 nanoERG (0.04 tERG) of 40000000 nanoERG (0.04 tERG) left. Backed for you up to 2000000 nanoERG (0.002 tERG) by a backer not named here, guaranteed for you up to 2000000.",
    "exit": 0
   },
   {
@@ -590,7 +590,7 @@
      ]
     }
    },
-   "summary": "Accept: Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 40000000 nanoERG (0.04 tERG) of 40000000 nanoERG (0.04 tERG) left. Backed for you up to 2000000 nanoERG (0.002 tERG) by a backer not named here, backed for you up to 2000000. Your own side: Your own limits allow it. Your owner approves each commitment above 1000000 nanoERG (0.001 tERG): your acceptance waits for your owner before it binds.",
+   "summary": "Accept: Within its budget: up to 5000000 nanoERG (0.005 tERG) a deal, 40000000 nanoERG (0.04 tERG) of 40000000 nanoERG (0.04 tERG) left. Backed for you up to 2000000 nanoERG (0.002 tERG) by a backer not named here, guaranteed for you up to 2000000. Your own side: Your own limits allow it. Your owner approves each commitment above 1000000 nanoERG (0.001 tERG): your acceptance waits for your owner before it binds.",
    "exit": 1
   },
   {

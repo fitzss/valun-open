@@ -8,9 +8,9 @@ valun.sandbox.Seller, the loop of the deterministic sandbox seller.
 
 A seller can also pay for work: its wants (AISeller(wants=...), a dict of want specs, below). Another agent proposes a
 want with role payee; the seller takes it within its daily counts, and when the work is delivered it asks its model
-whether the work meets the want's terms: it pays with its own credit note if so (or if the model cannot tell), and
-disputes it with the reasons if not. A buyer that owes the seller is paid back this way in work: the two debts form a
-loop, which the set-off cancels. Only deals the seller took as wants are ever reviewed by it.
+whether the work meets the want's terms: it pays with its own note if so (or if the model cannot tell), and disputes
+it with the reasons if not. A buyer that owes the seller can clear what it owes this way: the two notes form a loop, and
+a set-off clears the same amount from both, up to the smaller one. Only deals the seller took as wants are ever reviewed by it.
 
 Spending is capped in dollars, computed from the API's own token counts and the price list below:
 - a monthly and a daily budget (--monthly-usd, --daily-usd). A job starts only if its worst case (its input, plus

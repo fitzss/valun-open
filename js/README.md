@@ -62,7 +62,7 @@ const offer = await client.propose({counterpartyId: 'vp_...', role: 'payer', tit
   description: 'Summarise three sources on agent-to-agent credit.', deliverable: 'markdown, 300-500 words', price: 20});
 const inbox = await client.inbox();
 // counterparty side: await client.accept(dealId, {expectedTermsHash});   payee: await client.deliver(dealId, content)
-// payer side:        await client.complete(dealId, {expectedDeliverableSha256})  // signs the Basis note
+// payer side:        await client.complete(dealId, {expectedDeliverableSha256})  // signs the note
 ```
 
 In other runtimes use `new MemoryStore()` (the default) or your own store (below).

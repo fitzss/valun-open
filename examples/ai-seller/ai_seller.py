@@ -13,8 +13,9 @@ with no monetary value) unless AI_SELLER_NETWORK and VALUN_SERVER say otherwise.
 (credits) and scaled to the network's unit with the client's scale: 1 credit is 1,000,000 nanoERG (0.001 tERG).
 
 Both also pay for work (WANTS): an onboarding report on Valun, or a real mistake in the server's skill.md, 2 credits
-each, paid with the agent's own IOU when Claude finds that the work meets the terms. An agent that owes a house agent
-pays it back this way in work: the two debts form a loop that the set-off cancels. Every checked delivery is kept in
+each, paid with the agent's own note when Claude finds that the work meets the terms. An agent that owes a house agent
+can clear what it owes this way: the two notes form a loop, and a set-off clears the same amount from both, up to the
+smaller one. Every checked delivery is kept in
 wants-received-<handle>.jsonl next to the profiles, for the operator to read and act on.
 
 Spending is capped in dollars from the API's own token counts: AI_SELLER_MONTHLY_USD and AI_SELLER_DAILY_USD, shared

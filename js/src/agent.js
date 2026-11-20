@@ -824,7 +824,7 @@ export function offersCountedAt(v) {
  * decline or ask_owner without reasons).
  *
  * A server from before #87 (no payer_side) gives the payer's verdict, and its summary is 0.7.1's: the lead of
- * CHECK_LEAD, the cover named by this client ('backed for you up to N') only when cover.covered is a whole number above 0
+ * CHECK_LEAD, the cover named by this client ('guaranteed for you up to N') only when cover.covered is a whole number above 0
  * (the server shows it only to the payee itself, and null means not shown, never 0) and only for accept and ask_owner (a
  * declined IOU would not be issued at all), and 'Your own side: ' with the payee's own reasons only when that side is
  * decline or ask_owner.
@@ -846,7 +846,7 @@ export function checkSummary(v) {
       : verdict !== null && Object.hasOwn(CHECK_FALLBACK, verdict) ? CHECK_FALLBACK[verdict] : 'the server gave no verdict this client knows'];
   }
   const covered = isDict(get(d, 'cover')) ? get(d.cover, 'covered') : null;
-  if (!both && (verdict === 'accept' || verdict === 'ask_owner') && whole(covered) && covered > 0) parts.push(`backed for you up to ${covered}`);
+  if (!both && (verdict === 'accept' || verdict === 'ask_owner') && whole(covered) && covered > 0) parts.push(`guaranteed for you up to ${covered}`);
   const lead = owners !== null ? CHECK_ASK_LEAD[owners] : verdict !== null && Object.hasOwn(CHECK_LEAD, verdict) ? CHECK_LEAD[verdict] : 'Unknown';
   const text = summaryText(parts), offers = offersCountedAt(d);
   let out;
@@ -1681,10 +1681,11 @@ function serverOf(c) {
 }
 
 /**
- * valun_inbox's one line for a recently closed deal whose IOU was issued (note_issued), from its inbox brief (its
- * counterparty, your_role and price), or null for any other. The Python core's closed_summary.
+ * valun_inbox's one line for a recently closed deal whose note was issued (note_issued), from its inbox brief (its
+ * counterparty, your_role and price), or null for any other. Only the testnet redeems a note: elsewhere the line says
+ * it can be cleared or passed on (the server's words). The Python core's closed_summary.
  */
-export function closedSummary(x) {
+export function closedSummary(x, network = NETWORK) {
   if (!(isDict(x) && get(x, 'status') === 'note_issued')) return null;
   const price = isDict(get(x, 'price')) ? x.price : {};
   const amount = get(price, 'amount'), unit = get(price, 'unit');
@@ -1693,7 +1694,8 @@ export function closedSummary(x) {
   const who = typeof cp === 'string' && cp ? shown(cp) : 'the other party';
   const lead = get(x, 'your_role') === 'payer' ? `Paid with your note: this deal added ${amt} to what you owe ${who}.`
     : `${who} paid with its note: this deal added ${amt} to what ${who} owes you.`;
-  return lead + ' valun_deal shows where it stands on the tracker and how it can be cleared, passed on or redeemed.';
+  const ways = network === TESTNET ? 'cleared, passed on or redeemed' : 'cleared or passed on';
+  return lead + ` valun_deal shows where it stands on the tracker and how it can be ${ways}.`;
 }
 
 /**
@@ -3174,14 +3176,18 @@ export class ValunAgent {
     const network = c.network ?? undefined, unitWord = c.unit ?? UNIT;
     const notary = sandbox.priceOf('notary', network);
     const stepOf = (cp, role) => (cp === SANDBOX_EXACT ? (role === 'payee' ? 1 : (hm >= notary ? 5 : 3)) : (role === 'payer' ? 2 : 4));
+    // Fix inbox #175: what waits for the owner, said beside a tour action on a deal the owner does not hold
+    const owner = {};
     const plan = (step, calls, then, retryAfter = SANDBOX_RETRY_S) => {
       const done = whole(step) && Object.hasOwn(TOUR_AFTER, step) ? TOUR_AFTER[step] : null;
       const scale = c.scale ?? 1;
-      return {tour_step: step, of: 5, goal: tourGoal(step, unitWord, scale),
-        next_calls: calls, then, with_the_sandbox_agents: held,
+      const p = {tour_step: step, of: 5, goal: tourGoal(step, unitWord, scale),
+        next_calls: calls, then: then + (owner.also ?? ''), with_the_sandbox_agents: held,
         ...(done ? {when_done: {you_hold_PC: done[0] * scale, you_owe_PC: done[1] * scale}} : {}),
         // fix-inbox #8: how long to wait before calling valun_status again, so a small model does not poll
         ...(retryAfter ? {retry_after_seconds: retryAfter} : {})};
+      if (owner.waiting) p.waiting_for_your_owner = owner.waiting;
+      return p;
     };
     const call = (tool, args, why) => ({tool, arguments: args, why});
     if (c.participantId && get(c.state, TOUR_DONE_KEY) === c.participantId) {
@@ -3203,8 +3209,10 @@ export class ValunAgent {
     cleared = whole(cleared) && cleared > 0 ? cleared : 0;
     if (listed.awaiting_your_owner.length) {
       const x = listed.awaiting_your_owner[0];
-      const [where] = ownerWait(c, {approvals: [{id: get(x, 'approval_id'), state: 'pending'}]}, get(x, 'deal_id'),
-        this.consoleCommand);
+      // A guarantee offer has no deal: the server names its guarantee (deal_id null, guarantee_id)
+      const gid = get(x, 'deal_id') === null && typeof get(x, 'guarantee_id') === 'string' ? x.guarantee_id : null;
+      const [where] = ownerWait(c, {approvals: [{id: get(x, 'approval_id'), state: 'pending'}]},
+        gid ? gid : get(x, 'deal_id'), this.consoleCommand, gid ? 'guarantee' : 'deal');
       // A held note names the console's deadline for it, and once the tracker's hour has passed, that the owner must
       // reject it (the 0.7.2 review).
       const [by, exp, passed] = heldNoteOf(c, x, typeof c.nowMs === 'function' ? c.nowMs() : this.#now());
@@ -3217,16 +3225,36 @@ export class ValunAgent {
         : `Your owner must first approve a commitment${where}`
           + (exp ? ` (a note: by ${deadlineWords(by, exp)})` : '')
           + '; tell them, then call valun_status again.';
-      // Fix inbox #175: the step in hand, from the holdings, and that it waits; never "complete" (0.7.2 said so for a
-      // participant whose first two steps were held, holding and owing nothing).
-      const step = tourStepFrom(hx, hm, ox, paidByTransfer, cleared, notary);
-      const p = plan(step === 'done' ? 5 : step, [], then, OWNER_RETRY_S);
-      const what = truthy(get(x, 'approval_id'))
-        ? `approval ${shown(x.approval_id)}` + (truthy(get(x, 'deal_id')) ? ` (deal ${shown(x.deal_id)})` : '')
-        : 'a commitment of yours';
-      p.goal = `Waiting for your owner: ${what} is held for them in the owner console. Then: ` + p.goal;
-      p.waiting_for_your_owner = Object.fromEntries(['approval_id', 'deal_id', 'kind'].filter(k => get(x, k) !== null).map(k => [k, x[k]]));
-      return p;
+      const waiting = Object.fromEntries(['approval_id', 'deal_id', 'guarantee_id', 'kind'].filter(k => get(x, k) !== null).map(k => [k, x[k]]));
+      // Fix inbox #175: a delivery to make, a delivery to review or an offer to answer on a deal the owner does not hold
+      // is taken now (one of two held steps approved: deliver it), with what waits said beside it.
+      const onHold = new Set(listed.awaiting_your_owner.map(y => get(y, 'deal_id')).filter(d => typeof d === 'string'));
+      for (const k of ['review_delivery', 'deliver', 'respond']) {
+        listed[k] = listed[k].filter(y => !(typeof get(y, 'deal_id') === 'string' && onHold.has(y.deal_id)));
+      }
+      if (listed.review_delivery.length || listed.deliver.length || listed.respond.length) {
+        owner.waiting = waiting;
+        owner.also = passed ? ' Meanwhile: ' + then
+          : ` Meanwhile, your owner must approve a commitment${where}`
+            + (exp ? ` (a note: by ${deadlineWords(by, exp)})` : '') + '; tell them.';
+      } else {
+        // The step in hand, from the holdings, and that it waits; never "complete" while a step is held (0.7.2 said so
+        // for a participant whose first two steps were held, holding and owing nothing). Holdings that read done hold
+        // no tour step: the tour is complete, and what waits is not part of it.
+        const step = tourStepFrom(hx, hm, ox, paidByTransfer, cleared, notary);
+        let p;
+        if (step === 'done') {
+          p = plan('done', [], 'Nothing of the tour is left to do. ' + then, OWNER_RETRY_S);
+        } else {
+          p = plan(step, [], then, OWNER_RETRY_S);
+          const what = truthy(get(x, 'approval_id'))
+            ? `approval ${shown(x.approval_id)}` + (truthy(get(x, 'deal_id')) ? ` (deal ${shown(x.deal_id)})` : '')
+            : 'a commitment of yours';
+          p.goal = `Waiting for your owner: ${what} is held for them in the owner console. Then: ` + p.goal;
+        }
+        p.waiting_for_your_owner = waiting;
+        return p;
+      }
     }
     for (const x of listed.review_delivery) {
       const did = get(x, 'deal_id'), cp = get(x, 'counterparty');
@@ -3459,13 +3487,14 @@ export class ValunAgent {
   }
 
   /**
-   * The server's inbox, with a one-line summary first in each recently closed deal whose IOU was issued (closedSummary;
+   * The server's inbox, with a one-line summary first in each recently closed deal whose note was issued (closedSummary;
    * the Nov 18 fresh-join run, finding 12: recent_closed showed only status note_issued).
    */
   async inbox() {
-    const box = await this.client().inbox();
+    const c = this.client();
+    const box = await c.inbox(), net = c.network ?? NETWORK;
     if (!(isDict(box) && Array.isArray(get(box, 'recent_closed')))) return box;
-    return {...box, recent_closed: box.recent_closed.map(x => (closedSummary(x) ? {summary: closedSummary(x), ...x} : x))};
+    return {...box, recent_closed: box.recent_closed.map(x => (closedSummary(x, net) ? {summary: closedSummary(x, net), ...x} : x))};
   }
 
   // ---------- guarantees (fix inbox #18) ----------

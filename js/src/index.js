@@ -62,6 +62,9 @@ export {
   // 0.7.2, the RC's staging test: a held IOU's deadline is the owner console's, a minute before the tracker's; the words
   // beside this client's own times (the RC's review: Python had MARGIN_WORDS, this package did not export it)
   noteDecideBy, HELD_NOTE_SEND_MARGIN_MS, MARGIN_WORDS,
+  // 0.7.3: the testnet's third-party labels (fix inbox #177), the tour's step from the holdings and its text for no step
+  // (#175), and valun_directory's labels for the agents the server runs (#177 item 6), as the Python core has them
+  THIRD_PARTY_TESTNET, PAY_THIRD_PARTY_TESTNET, TOUR_NO_STEP, tourStepFrom, DIRECTORY_LABELS, HOUSE_LABEL, directoryLabel,
 } from './agent.js';
 export {valunTools, NO_APPROVAL_STEP, startConsentLoop, CONSENT_LOOP_MS, CONSENT_LOOP_JITTER_MS} from './tools.js';
 export * as schemas from './schemas.js';

@@ -872,8 +872,8 @@ class Run {
       const after = (this.shown.has(edge) ? this.shown.get(edge) : ABSENT).timestamp;
       for (const p of this.pair(edge)[1]) {
         if (get(p, 'kind') === 'note' && get(p, 'direction') === 'out' && mod(p.timestamp, 1000) < RESERVED_MS[0] && p.timestamp > after) {
-          this.refuse('pending_unbound_note', 'you hold an unapplied ordinary note on this edge; a '
-            + 'novation is signed only once it is settled either way');
+          this.refuse('pending_unbound_note', 'an ordinary note you issued on this edge has not applied '
+            + 'yet; a novation is signed only once it has applied or can no longer apply');
         }
       }
     }

@@ -97,7 +97,7 @@ test('the Nov 18 fresh-join run: builtInJob, checkBuiltIn, exactFacts, exactAdvi
   for (const [d, n, u, c, server, role, out] of P.note_summary) {
     assert.equal(agentModule.noteSummary(d, n, u, c, server, role), out, show([d, n, c, server, role]));
   }
-  for (const [x, out] of P.closed_summary) assert.equal(agentModule.closedSummary(x), out, show(x));
+  for (const [x, n, out] of P.closed_summary) assert.equal(agentModule.closedSummary(x, n), out, show([x, n]));
   for (const [p, info, out] of P.self_serve_words) assert.equal(agentModule.selfServeWords(p, info), out, show([p, info]));
 });
 
@@ -345,6 +345,11 @@ test('circulation helpers: consentRoles, the capability header, the consent poli
   for (const [policy, out] of H.client_signs_testnet) assert.deepEqual(api.clientSigns(policy, 'nanoERG'), out, show(policy));
   for (const [n, u, out] of H.amount_text) assert.equal(api.amountText(n, u), out, `${n} ${u}`);
   for (const [s, u, k, out] of H.tour_goal) assert.equal(api.tourGoal(s, u, k), out, `${s} ${u}`);
+  // 0.7.3: the step the holdings give (fix inbox #175) and the directory's labels (#177 item 6), as Python gives them
+  for (const [hx, hm, ox, t, c, n, out] of H.tour_step_from) assert.equal(api.tourStepFrom(hx, hm, ox, t, c, n), out, show([hx, hm, ox, t, c]));
+  for (const [p, out] of H.directory_label) assert.equal(api.directoryLabel(p), out, show(p));
+  assert.ok(H.tour_step_from.length === 192 && H.directory_label.length === 16, 'the 0.7.3 cases are recorded');
+  assert.ok(H.tour_step_from.some(x => x[6] === 'done') && H.directory_label.some(x => x[1] === api.HOUSE_LABEL), 'every kind of answer');
   for (const [r, u, n, circulating, out] of H.owes) assert.equal(api.owes(r, 'bob', n, u, circulating), out, `${r} ${u} ${circulating}`);
   assert.ok(H.owes.some(([r, , , circulating, out]) => r === 'payer' && circulating === true && !out.includes('(your note)')),
     'with circulating credit the payer is promised no own-note-only payment');

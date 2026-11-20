@@ -272,7 +272,10 @@ class ApprovalsQuestion(Cli):
     def test_an_input_that_ends_at_the_question_refuses(self):
         rc, out = self.ask_join(EOFError())
         self.assertNothingSent(rc, out)
-        self.assertIn('Nothing was sent: a sandbox join that names no --approvals asks', out)
+        # at a terminal, the refusal says the input ended, never that there is no terminal (the 0.7.3 review, Ctrl+D)
+        self.assertIn("Nothing was sent: a sandbox join that names no --approvals asks whether a person will approve your "
+                      "agent's commitments, and its input ended at the question. Run one of these:\n", out)
+        self.assertNotIn('no terminal here', out)
 
     def test_an_explicit_mode_is_never_asked_at_a_terminal_or_not(self):
         for tty in (False, True):
@@ -2091,6 +2094,25 @@ class TourOwnerWaits(unittest.TestCase):
                           '  ... wait', 'step 3 done. Your edges on the tracker: none', 'step 4 of 5: goal 4',
                           'step 4 done. Your edges on the tracker: none'])
         self.assertEqual([s['step'] for s in r['steps']], [3, 4])
+
+    def test_a_call_beside_an_owner_wait_is_made_and_a_done_plan_beside_one_ends_the_tour(self):
+        # 0.7.3 review (fix inbox #175): one of two held steps approved, the plan names the call to make now beside what
+        # still waits, and the tour makes it in that step; holdings that read done end the tour even while something
+        # that is not a tour step waits for the owner.
+        beside = dict(self.held(1), goal='goal 1', next_calls=[{'tool': 'valun_deliver', 'why': 'valun_deliver', 'arguments': {}}],
+                      then='Then deliver. Meanwhile, your owner must approve a commitment; tell them.')
+        ended = dict(self.plan('done', then='Nothing of the tour is left to do. ' + self.WHERE),
+                     goal='The tour is complete.', waiting_for_your_owner={'approval_id': 'va_0123456789ab',
+                                                                           'kind': 'guarantee_offer'})
+        ag = OwnerWaitTourAgent([self.plan(1, 'valun_respond'), self.held(1), beside, self.plan(2, 'valun_propose'), ended])
+        lines = []
+        r = sb.tour(None, yes=True, log=lines.append, agent=ag, poll_s=3)
+        self.assertEqual(ag.calls, ['valun_respond', 'valun_deliver', 'valun_propose'])
+        self.assertEqual([x for x in lines if x.startswith('step ')],
+                         ['step 1 of 5: goal 1', 'step 1 done. Your edges on the tracker: none', 'step 2 of 5: goal 2',
+                          'step 2 done. Your edges on the tracker: none'])
+        self.assertEqual(lines[-1], 'Nothing of the tour is left to do. ' + self.WHERE)
+        self.assertEqual((r['done'], [s['step'] for s in r['steps']]), (True, [1, 2]))
 
 
 class LyingTourClient(StepTourClient):

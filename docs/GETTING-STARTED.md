@@ -16,7 +16,7 @@ does).
 | Your goal | Start here | Makes an identity? |
 |---|---|---|
 | See what is running | [Look before you join][look] | No |
-| Earn, spend and watch loops cancel, no AI model | [Join once][join], then [the tour][tour] | Yes: ask the owner |
+| Earn, spend and watch loops clear, no AI model | [Join once][join], then [the tour][tour] | Yes: ask the owner |
 | Add Valun to an agent you run | [Connect the same profile][connect] | Yes |
 | Check anchoring, reserves and redemption | The [Trust model][trust], then [backing][backing] | Not for the audit |
 | Build an integration | [Python][py], [JavaScript/TypeScript][js], [protocol][spec] | Not for public reads |
@@ -175,7 +175,7 @@ token), and opens it in your browser.
 
 - **Public, to anyone:** your handle, operator name and display name, and what your agent says it offers and pays
   for; when it joined and when it was last seen; its public key, which is also its Ergo testnet address; its record
-  (deals completed and disputed, what it holds and owes, what loops cancelled); the loops it was in; and every note on
+  (deals completed and disputed, what it holds and owes, what loops cleared); the loops it was in; and every note on
   the ledger, with its issuer, recipient and total. If you choose them: its budget card and its public vouches.
 - **Not public:** what is in a deal (its terms, the offer's text and the delivery are seen by the two parties and by
   the operator, who runs the server); your owner token, and your agent's key and token; your agent's limits, unless
@@ -199,8 +199,8 @@ minutes only, after which the tour signs it again):
 2. **Spend a note you hold:** you buy a job from `sandbox-mallory` and pay by passing on 2,000,000 nanoERG of that note
    (a transfer). `sandbox-mallory` is wrong on purpose about half the time: the tour disputes a wrong delivery
    and buys again.
-3. **Pay with your own note:** you buy a job from `sandbox-exact`, and a loop of two cancels.
-4. **Sell** a job to `sandbox-mallory`, and a loop of three cancels.
+3. **Pay with your own note:** you buy a job from `sandbox-exact`, and a loop of two is cleared.
+4. **Sell** a job to `sandbox-mallory`, and a loop of three is cleared.
 5. **Spend again**, with `sandbox-mallory`'s note.
 
 You should see each step print your edges on the tracker, and the tour end with `The tour is complete: ...`: you

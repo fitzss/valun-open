@@ -38,7 +38,7 @@ export const DIRECTORY = deepFreeze({
     + 'With a query the best matches come first, otherwise the most recently active agents. total_matching says how '
     + 'many match; when more remain, the answer has next_offset: call again with offset set to it for the next page, or '
     + 'narrow the query. Use it to decide whom to deal with and whether to accept someone\'s credit. To earn notes, '
-    + 'propose a job an agent wants with role payee: work for an agent you owe can clear what you owe it in a loop (a set-off). ' + SIM,
+    + 'propose a job an agent wants with role payee: work for an agent you owe can clear up to that much of what you owe it in a loop (a set-off). ' + SIM,
   parameters: {type: 'object', properties: {
     query: {type: 'string', description: 'Optional text to match in handle, name, about, services or wants (not case-sensitive); matches in the handle or name come first, then in services or wants, then in about'},
     limit: {type: 'integer', minimum: 1, maximum: 50, description: 'How many participants to return (default 10, at most 50)'},
@@ -70,7 +70,7 @@ export const DEAL = deepFreeze({
     + 'is not in the built-in format, dispute the delivery with that reason; never claim you checked a hash or a count '
     + 'yourself. Any other job is not checked exactly, even if its terms mention a word count: judge it against the '
     + 'agreed terms. Once the note is issued (note_issued), it opens with a summary: who owes whom, where the note '
-    + 'stands, how to check it and how it can be cleared, passed on or redeemed.',
+    + 'stands, how to check it and how it can be cleared or passed on.',
   parameters: {type: 'object', properties: {
     deal_id: {type: 'string', description: 'Deal id, e.g. vd_0123456789abcdef'}}, required: ['deal_id']},
 });
@@ -203,7 +203,7 @@ export const OFFER_GUARANTEE = deepFreeze({
       note: {type: 'string', description: 'Optional: what the guarantee is for, in one line; the three parties read it (up to 500 characters)'},
       deals: {
         type: 'array', minItems: 1, maxItems: 10, items: {type: 'string', pattern: '^vd_[0-9a-f]{16}$'},
-        description: 'Optional: the deal ids you back (1 to 10, in which the issuer pays the creditor). Then you cover only what is unpaid of them; what it owes for any other deal, also what it comes to owe later, is not covered. Without it you cover anything the issuer owes the creditor: the cap is your exposure',
+        description: 'Optional: the deal ids you guarantee (1 to 10, in which the issuer pays the creditor). Then you cover only what is unpaid of them; what it owes for any other deal, also what it comes to owe later, is not covered. Without it you cover anything the issuer owes the creditor: the cap is your exposure',
       },
     },
     required: ['issuer', 'creditor', 'cap', 'due_in_hours'],
@@ -282,6 +282,7 @@ export const TESTNET_WORDS = Object.freeze([
     "'never pay more than 0.02 tERG for a brief', 'don't owe more than 0.04 tERG in total', 'don't work for less than "
     + "0.015 tERG'; limits are in nanoERG: 0.02 tERG is 20000000"],
   ['one line on what PC are', 'one line on what the amounts are'],
+  ['how it can be cleared or passed on.', 'how it can be cleared, passed on or redeemed.'],
 ].map(Object.freeze));
 
 function testnetText(v) {

@@ -36,7 +36,7 @@ const MANDATE = {max_issue_per_deal: 30, max_issue_outstanding: 100, max_accept_
 const ME_VIEW = {participant: {id: ME, handle: 'alice', status: 'active'}, mandate: MANDATE, mandate_version: 3,
   position: {claims_held: 0, owes: 9, net: -9}, authority: {}};
 const INFO = {network: NETWORK, protocol: 'valun-deal/1', unit: 'PC'};
-const SUMMARY_ACCEPT = 'Accept: within its budget (31 of 40 left), backed for you up to 3.';
+const SUMMARY_ACCEPT = 'Accept: within its budget (31 of 40 left), guaranteed for you up to 3.';
 const SUMMARY_ASK = 'Ask the payer\'s owner: within its budget (13 of 40 left), its owner approves each IOU above 25.';
 const SUMMARY_DECLINE = 'Decline: above its limit per deal (30), more than the room it has left (31).';
 const SUMMARY_NOT_PUBLIC = "Unknown: bob's owner has not published a budget card, so its budget cannot be checked; decide from its "
@@ -219,11 +219,11 @@ test("valun_check_payer: the server's verdict with the summary first (the server
 
 test('checkSummary(): the cover is named only when it is shown and above 0, and not for a decline', () => {
   const s = (verdict, covered) => checkSummary({verdict, reasons: ['r'], cover: {covered}});
-  assert.equal(s('accept', 3), 'Accept: r, backed for you up to 3.');
-  assert.equal(s('ask_owner', 2), 'Ask the payer\'s owner: r, backed for you up to 2.');
+  assert.equal(s('accept', 3), 'Accept: r, guaranteed for you up to 3.');
+  assert.equal(s('ask_owner', 2), 'Ask the payer\'s owner: r, guaranteed for you up to 2.');
   for (const covered of [null, undefined, 0, -1, 2.5, true, '3', 2 ** 53]) assert.equal(s('accept', covered), 'Accept: r.', String(covered));
   assert.equal(s('decline', 3), 'Decline: r.', 'a declined IOU would not be issued: its cover is not named');
-  assert.equal(checkSummary({verdict: 'accept', cover: {covered: 3}}), "Accept: its owner's budget card allows this note, backed for you up to 3.");
+  assert.equal(checkSummary({verdict: 'accept', cover: {covered: 3}}), "Accept: its owner's budget card allows this note, guaranteed for you up to 3.");
 });
 
 test('valun_check_payer: the new decline rules (no_agent, network_limit) read as other declines', async () => {
@@ -392,7 +392,7 @@ test('valun_check_payer: a new deal at the price of an offer the payer made you 
   w.extra = {counted_offers: [{deal_id: OFFER, amount: 18}]};
   const r = await w.agent().callSafe('valun_check_payer', {payer: 'bob', amount: 18});
   assert.equal(r.summary, `Accept, for a new deal on top of the offer you received at this price (${OFFER}, already counted): within its `
-    + `budget (31 of 40 left), backed for you up to 3. To check that offer itself, call valun_check_payer again with deal_id ${OFFER}.`);
+    + `budget (31 of 40 left), guaranteed for you up to 3. To check that offer itself, call valun_check_payer again with deal_id ${OFFER}.`);
   const s = (offers, more = {}) => checkSummary({verdict: 'accept', reasons: ['r'], amount: 18, counted_offers: offers, ...more});
   assert.equal(s([{deal_id: OFFER, amount: 18}, {deal_id: OTHER_OFFER, amount: 18}]), `Accept, for a new deal on top of the 2 offers you `
     + `received at this price (${OFFER}, ${OTHER_OFFER}, already counted): r. To check one of them, call valun_check_payer again with its deal_id.`);
@@ -489,7 +489,7 @@ test('fix inbox #87: with payer_side this client never names the cover itself; y
     assert.equal(checkSummary({...v, payee_side: {verdict: 'accept', reasons: ['Your own limits allow it.', 'Backed for you up to 3 by @erin.']}}),
       'Accept: Both sides allow it. Your own side: Your own limits allow it. Backed for you up to 3 by @erin.');
   }
-  assert.equal(checkSummary({verdict: 'accept', reasons: ['r'], cover: {covered: 3}}), 'Accept: r, backed for you up to 3.', 'before #87: as in 0.7.1');
+  assert.equal(checkSummary({verdict: 'accept', reasons: ['r'], cover: {covered: 3}}), 'Accept: r, guaranteed for you up to 3.', 'before #87: as in 0.7.1');
   const v = {verdict: 'accept', reasons: ['Both sides allow it.'], payer_side: BOTH};
   assert.equal(checkSummary({...v, payee_side: {verdict: 'accept', reasons: []}}), 'Accept: Both sides allow it.');
   for (const side of [{verdict: 'Accept', reasons: ['x']}, {verdict: ['accept'], reasons: ['x']}, {reasons: ['x']}, 'accept']) {

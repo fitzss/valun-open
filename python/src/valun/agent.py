@@ -1422,7 +1422,7 @@ def check_summary(v):
     of CHECK_PAYEE_SIDE for a decline or ask_owner without reasons).
 
     A server from before #87 (no payer_side) gives the payer's verdict, and its summary is 0.7.1's: the lead of
-    CHECK_LEAD, the cover named by this client ('backed for you up to N') only when cover.covered is a whole number above
+    CHECK_LEAD, the cover named by this client ('guaranteed for you up to N') only when cover.covered is a whole number above
     0 (the server shows it only to the payee itself, and null means not shown, never 0) and only for accept and
     ask_owner (a declined IOU would not be issued at all), and 'Your own side: ' with the payee's own reasons only when
     that side is decline (the payee's own limits refuse it) or ask_owner (the payee's owner decides first), so an Accept
@@ -1443,7 +1443,7 @@ def check_summary(v):
         parts = [CHECK_ASK_FALLBACK[owners] if owners else CHECK_FALLBACK.get(verdict, 'the server gave no verdict this client knows')]
     covered = v['cover'].get('covered') if isinstance(v.get('cover'), dict) else None
     if not both and verdict in ('accept', 'ask_owner') and _whole(covered) and 0 < covered <= nv.MAX_SAFE_INTEGER:
-        parts.append(f'backed for you up to {covered}')
+        parts.append(f'guaranteed for you up to {covered}')
     lead = CHECK_ASK_LEAD[owners] if owners else CHECK_LEAD.get(verdict, 'Unknown')
     text, offers = _summary_text(parts), offers_counted_at(v)
     if len(offers) == 1:
@@ -1622,9 +1622,10 @@ def _server_of(c):
     return s.rstrip('/') if isinstance(s, str) and s else None
 
 
-def closed_summary(item):
-    """valun_inbox's one line for a recently closed deal whose IOU was issued (note_issued), from its inbox brief (its
-    counterparty, your_role and price), or None for any other."""
+def closed_summary(item, network=vc.NETWORK):
+    """valun_inbox's one line for a recently closed deal whose note was issued (note_issued), from its inbox brief (its
+    counterparty, your_role and price), or None for any other. Only the testnet redeems a note: elsewhere the line says
+    it can be cleared or passed on (the server's words, core.mjs's note summary)."""
     if not (isinstance(item, dict) and item.get('status') == 'note_issued'):
         return None
     price = item.get('price') if isinstance(item.get('price'), dict) else {}
@@ -1634,7 +1635,8 @@ def closed_summary(item):
     who = shown(cp) if isinstance(cp, str) and cp else 'the other party'
     lead = (f'Paid with your note: this deal added {amt} to what you owe {who}.' if item.get('your_role') == 'payer' else
             f'{who} paid with its note: this deal added {amt} to what {who} owes you.')
-    return lead + ' valun_deal shows where it stands on the tracker and how it can be cleared, passed on or redeemed.'
+    ways = 'cleared, passed on or redeemed' if network == TESTNET else 'cleared or passed on'
+    return lead + f' valun_deal shows where it stands on the tracker and how it can be {ways}.'
 
 
 def exact_advice(exact):
@@ -1659,9 +1661,10 @@ HOUSE_LABEL = 'house agent, operator-run; Claude on a shared daily and monthly b
 
 def directory_label(p):
     """The label valun_directory gives a directory entry: a practice agent's (operator_run) or a house agent's
-    (house_agent), else None."""
-    if p.get('operator_run') is True and p.get('handle') in DIRECTORY_LABELS:
-        return DIRECTORY_LABELS[p['handle']]
+    (house_agent), else None. A handle that is not a string has no label of its own (as the JS client's directoryLabel)."""
+    h = p.get('handle')
+    if p.get('operator_run') is True and isinstance(h, str) and h in DIRECTORY_LABELS:
+        return DIRECTORY_LABELS[h]
     return HOUSE_LABEL if p.get('house_agent') is True else None
 
 
@@ -2956,14 +2959,20 @@ class ValunAgent:
                 return 1 if role == 'payee' else (5 if hm >= sandbox.price_of('notary', getattr(c, 'network', None)) else 3)
             return 2 if role == 'payer' else 4
 
+        # Fix inbox #175: what waits for the owner, said beside a tour action on a deal the owner does not hold
+        owner = {}
+
         def plan(step, calls, then, retry_after_seconds=SANDBOX_RETRY_S):
             done = TOUR_AFTER.get(step) if isinstance(step, int) else None
             scale = getattr(c, 'scale', 1)
-            return {'tour_step': step, 'of': 5, 'goal': tour_goal(step, getattr(c, 'unit', vc.UNIT), scale),
-                    'next_calls': calls, 'then': then, 'with_the_sandbox_agents': held,
-                    **({'when_done': {'you_hold_PC': done[0] * scale, 'you_owe_PC': done[1] * scale}} if done else {}),
-                    # fix-inbox #8: how long to wait before calling valun_status again, so a small model does not poll
-                    **({'retry_after_seconds': retry_after_seconds} if retry_after_seconds else {})}
+            p = {'tour_step': step, 'of': 5, 'goal': tour_goal(step, getattr(c, 'unit', vc.UNIT), scale),
+                 'next_calls': calls, 'then': then + owner.get('also', ''), 'with_the_sandbox_agents': held,
+                 **({'when_done': {'you_hold_PC': done[0] * scale, 'you_owe_PC': done[1] * scale}} if done else {}),
+                 # fix-inbox #8: how long to wait before calling valun_status again, so a small model does not poll
+                 **({'retry_after_seconds': retry_after_seconds} if retry_after_seconds else {})}
+            if owner:
+                p['waiting_for_your_owner'] = owner['waiting']
+            return p
 
         def call(tool, args, why):
             return {'tool': tool, 'arguments': args, 'why': why}
@@ -2990,8 +2999,10 @@ class ValunAgent:
         cleared = cleared if _whole(cleared) and cleared > 0 else 0
         if listed['awaiting_your_owner']:
             x = listed['awaiting_your_owner'][0]
-            where, _wait = owner_wait(c, {'approvals': [{'id': x.get('approval_id'), 'state': 'pending'}]}, x.get('deal_id'),
-                                      self.console_command)
+            # A guarantee offer has no deal: the server names its guarantee (deal_id null, guarantee_id)
+            gid = x.get('guarantee_id') if x.get('deal_id') is None and isinstance(x.get('guarantee_id'), str) else None
+            where, _wait = owner_wait(c, {'approvals': [{'id': x.get('approval_id'), 'state': 'pending'}]},
+                                      gid if gid else x.get('deal_id'), self.console_command, 'guarantee' if gid else 'deal')
             # A held note names the console's deadline for it, and once the tracker's hour has passed, that the owner must
             # reject it (the 0.7.2 review: an approval then fails at the tracker and leaves the delivery accepted and no
             # longer disputable).
@@ -3006,15 +3017,31 @@ class ValunAgent:
                 then = (f'Your owner must first approve a commitment{where}'
                         + (f' (a note: by {_deadline_words(by, exp)})' if exp else '')
                         + '; tell them, then call valun_status again.')
-            # Fix inbox #175: the step in hand, from the holdings, and that it waits; never "complete" (0.7.2 said so
-            # for a participant whose first two steps were held, holding and owing nothing).
-            step = tour_step_from(hx, hm, ox, paid_by_transfer, cleared, notary)
-            p = plan(5 if step == 'done' else step, [], then, OWNER_RETRY_S)
-            what = ((f"approval {shown(x['approval_id'])}" + (f" (deal {shown(x['deal_id'])})" if x.get('deal_id') else ''))
-                    if x.get('approval_id') else 'a commitment of yours')
-            p['goal'] = f'Waiting for your owner: {what} is held for them in the owner console. Then: ' + p['goal']
-            p['waiting_for_your_owner'] = {k: x.get(k) for k in ('approval_id', 'deal_id', 'kind') if x.get(k) is not None}
-            return p
+            waiting = {k: x.get(k) for k in ('approval_id', 'deal_id', 'guarantee_id', 'kind') if x.get(k) is not None}
+            # Fix inbox #175: a delivery to make, a delivery to review or an offer to answer on a deal the owner does not
+            # hold is taken now (one of two held steps approved: deliver it), with what waits said beside it.
+            on_hold = {y['deal_id'] for y in listed['awaiting_your_owner'] if isinstance(y.get('deal_id'), str)}
+            for k in ('review_delivery', 'deliver', 'respond'):
+                listed[k] = [y for y in listed[k] if not (isinstance(y.get('deal_id'), str) and y['deal_id'] in on_hold)]
+            if listed['review_delivery'] or listed['deliver'] or listed['respond']:
+                owner.update(waiting=waiting, also=(' Meanwhile: ' + then) if passed else (
+                    f' Meanwhile, your owner must approve a commitment{where}'
+                    + (f' (a note: by {_deadline_words(by, exp)})' if exp else '') + '; tell them.'))
+            else:
+                # The step in hand, from the holdings, and that it waits; never "complete" while a step is held (0.7.2
+                # said so for a participant whose first two steps were held, holding and owing nothing). Holdings that
+                # read done hold no tour step: the tour is complete, and what waits is not part of it.
+                step = tour_step_from(hx, hm, ox, paid_by_transfer, cleared, notary)
+                if step == 'done':
+                    p = plan('done', [], 'Nothing of the tour is left to do. ' + then, OWNER_RETRY_S)
+                else:
+                    p = plan(step, [], then, OWNER_RETRY_S)
+                    what = ((f"approval {shown(x['approval_id'])}"
+                             + (f" (deal {shown(x['deal_id'])})" if x.get('deal_id') else ''))
+                            if x.get('approval_id') else 'a commitment of yours')
+                    p['goal'] = f'Waiting for your owner: {what} is held for them in the owner console. Then: ' + p['goal']
+                p['waiting_for_your_owner'] = waiting
+                return p
         for x in listed['review_delivery']:
             did, cp = x.get('deal_id'), x.get('counterparty')
             step = step_of(cp, 'payer')
@@ -3230,11 +3257,12 @@ class ValunAgent:
         return r
 
     def inbox(self, a):
-        """The server's inbox, with a one-line summary first in each recently closed deal whose IOU was issued
+        """The server's inbox, with a one-line summary first in each recently closed deal whose note was issued
         (closed_summary; the Nov 18 fresh-join run, finding 12: recent_closed showed only status note_issued)."""
-        box = self.client().inbox()
+        c = self.client()
+        box, net = c.inbox(), getattr(c, 'network', vc.NETWORK)
         if isinstance(box, dict) and isinstance(box.get('recent_closed'), list):
-            box = dict(box, recent_closed=[{'summary': closed_summary(x), **x} if closed_summary(x) else x
+            box = dict(box, recent_closed=[{'summary': closed_summary(x, net), **x} if closed_summary(x, net) else x
                                            for x in box['recent_closed']])
         return box
 

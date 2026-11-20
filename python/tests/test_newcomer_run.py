@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(HERE), 'src'))
 from valun import agent as va  # noqa: E402
 from valun import client as vc  # noqa: E402
 from valun import sandbox as sb  # noqa: E402
+from valun import schemas  # noqa: E402
 
 SERVER = 'https://valun.example'
 ME = 'vp_aaaaaaaaaaaa'
@@ -227,6 +228,24 @@ class PlainEnding(unittest.TestCase):
                                              'to what basis-fj-a owes you. valun_deal shows where it stands on the tracker '
                                              'and how it can be cleared, passed on or redeemed.')
         self.assertEqual(out['respond'], [])
+
+    def test_off_the_testnet_the_inbox_line_promises_no_redemption(self):
+        # The pilot network (every local server runs it) redeems nothing: the line says cleared or passed on, as the
+        # server's own summary does off the testnet (core.mjs: 'How it can be cleared or passed on').
+        box = {'recent_closed': [{'deal_id': 'vd_1', 'status': 'note_issued', 'counterparty': 'bob', 'your_role': 'payer',
+                                  'price': {'amount': 20, 'unit': 'PC'}}]}
+        fc = FakeClient(box=box)
+        fc.network, fc.unit, fc.scale = vc.NETWORK, 'PC', 1
+        out = Agent(fc).call('valun_inbox', {})
+        self.assertEqual(out['recent_closed'][0]['summary'], 'Paid with your note: this deal added 20 PC to what you owe bob. '
+                                                             'valun_deal shows where it stands on the tracker and how it '
+                                                             'can be cleared or passed on.')
+        self.assertNotIn('redeem', out['recent_closed'][0]['summary'])
+        deal = next(t for t in schemas.for_network(schemas.PILOT) if t['name'] == 'valun_deal')['description']
+        self.assertIn('how it can be cleared or passed on.', deal)
+        self.assertNotIn('redeem', deal)
+        deal = next(t for t in schemas.for_network(schemas.TESTNET) if t['name'] == 'valun_deal')['description']
+        self.assertIn('how it can be cleared, passed on or redeemed.', deal)
 
     def test_every_confirmation_is_explained_on_the_testnet_and_the_pilot(self):
         for conf in ('local_only', 'pending', 'confirmed'):

@@ -1548,6 +1548,7 @@ class SandboxNextSteps(Base):
         self.assertEqual(self.steps()['next_calls'][0]['tool'], 'valun_review_delivery')   # the next status decides
 
     def test_an_approval_waiting_for_the_owner_is_waited_for(self):
+        self.world.welcome = False              # nothing else to do: no offer to answer, no delivery to make
         inbox = self.world.inbox
         self.world.inbox = lambda: dict(inbox(), awaiting_your_owner=[{'approval_id': 'va_0123456789abcdef', 'deal_id': 'vd_1',
                                                                        'kind': 'pay_by_transfer'}])
@@ -1566,23 +1567,44 @@ class SandboxNextSteps(Base):
     def test_the_two_held_steps_of_the_175_repro_keep_step_1(self):
         # Basis's repro (fix inbox #175, 0.7.2 on the live testnet): the welcome acceptance and the Quickstart's offer
         # to sandbox-exact both held for the owner, holding and owing nothing: 0.7.2 said tour_step null, "The tour is
-        # complete.", next_calls [].
+        # complete.", next_calls []. The welcome job's acceptance is the held one: its offer, still listed to answer, is
+        # not answered again.
+        self.world.tick()
+        welcome = self.world.order[0]
         inbox = self.world.inbox
-        held = [{'approval_id': 'va_4db4926d794d', 'deal_id': 'vd_5dae7993aba88bda', 'kind': 'accept', 'version': 1,
+        held = [{'approval_id': 'va_4db4926d794d', 'deal_id': welcome, 'kind': 'accept', 'version': 1,
                  'counterparty': 'sandbox-exact'},
                 {'approval_id': 'va_5ec0000000aa', 'deal_id': 'vd_6eb0000000000001', 'kind': 'propose', 'version': 1,
                  'counterparty': 'sandbox-exact'}]
         self.world.inbox = lambda: dict(inbox(), awaiting_your_owner=held)
         n = self.steps()
         self.assertEqual((n['tour_step'], n['next_calls'], n['retry_after_seconds']), (1, [], 60))
-        self.assertTrue(n['goal'].startswith('Waiting for your owner: approval va_4db4926d794d (deal vd_5dae7993aba88bda) is '
+        self.assertTrue(n['goal'].startswith(f'Waiting for your owner: approval va_4db4926d794d (deal {welcome}) is '
                                              'held for them in the owner console. Then: Earn: '), n['goal'])
-        self.assertEqual(n['waiting_for_your_owner'], {'approval_id': 'va_4db4926d794d', 'deal_id': 'vd_5dae7993aba88bda',
+        self.assertEqual(n['waiting_for_your_owner'], {'approval_id': 'va_4db4926d794d', 'deal_id': welcome,
                                                        'kind': 'accept'})
         self.assertNotIn('The tour is complete', json.dumps(n))
         self.assertIn('Your owner must first approve a commitment', n['then'])
+        # The owner approves the welcome acceptance and not yet the offer: the job is the agent's to deliver now, with
+        # what still waits said beside it (the 0.7.3 review: 0.7.2 and the first candidate waited for both).
+        self.world.agree(welcome, sign_text(S, vc.statement('accept', self.world.deals[welcome]['current']['terms_hash'])))
+        self.world.inbox = lambda: dict(inbox(), awaiting_your_owner=held[1:])
+        n = self.steps()
+        self.assertEqual((n['tour_step'], n['next_calls']),
+                         (1, [{'tool': 'valun_deliver', 'arguments': {'deal_id': welcome, 'exact_result': True},
+                               'why': 'deliver the exact result your Valun client computes from the agreed text'}]))
+        self.assertTrue(n['goal'].startswith('Earn: sandbox-exact buys text-stats'), n['goal'])
+        self.assertEqual(n['waiting_for_your_owner'], {'approval_id': 'va_5ec0000000aa', 'deal_id': 'vd_6eb0000000000001',
+                                                       'kind': 'propose'})
+        self.assertIn(" call valun_status again. Meanwhile, your owner must approve a commitment in the owner console",
+                      n['then'])
+        self.assertIn('(deal vd_6eb0000000000001, approval va_5ec0000000aa', n['then'])
+        self.assertTrue(n['then'].endswith('; tell them.'), n['then'])
+        brief = self.agent.call('valun_status', {'brief': True})['sandbox_next_steps']
+        self.assertEqual((brief['next_calls'][0]['tool'], brief['waiting_for_your_owner']['approval_id']),
+                         ('valun_deliver', 'va_5ec0000000aa'))
 
-    def test_holdings_that_read_done_while_something_is_held_are_step_5_waiting(self):
+    def test_holdings_that_read_done_while_something_is_held_are_done(self):
         self.assertEqual(va.tour_step_from(0, 0, 0, 1, 2, 2), 'done')
         self.assertEqual([va.tour_step_from(*h, 2) for h in ((3, 0, 0, 0, 0), (1, 0, 0, 1, 0), (0, 0, 1, 1, 1), (0, 2, 0, 2, 1),
                                                               (0, 0, 0, 0, 0), (1, 1, 1, 0, 0), (0, 1, 1, 0, 0))],
@@ -1596,12 +1618,23 @@ class SandboxNextSteps(Base):
                                                                        'kind': 'guarantee_offer'}])
         self.world.position = lambda: dict(position(), cleared_by_setoff=2)
         n = self.steps()
-        self.assertEqual((n['tour_step'], n['next_calls']), (5, []))
-        self.assertTrue(n['goal'].startswith('Waiting for your owner: approval va_0123456789abcdef is held for them in the '
-                                             'owner console. Then: Spend again:'), n['goal'])
-        self.assertEqual(n['waiting_for_your_owner'], {'approval_id': 'va_0123456789abcdef', 'kind': 'guarantee_offer'})
-        self.assertNotIn('The tour is complete', json.dumps(n))
+        # No tour step can leave the holdings reading done while it is held (a held step-5 payment leaves
+        # sandbox-mallory's note held: step 5), so what waits is not a tour step: the tour is complete (the 0.7.3 review:
+        # the first candidate said step 5, "Spend again", which the agent could not take).
+        self.assertEqual((n['tour_step'], n['next_calls'], n['goal'], n['retry_after_seconds']),
+                         ('done', [], 'The tour is complete.', va.OWNER_RETRY_S))
+        self.assertTrue(n['then'].startswith('Nothing of the tour is left to do. Your owner must first approve a '
+                                             'commitment in the owner console'), n['then'])
+        self.assertIn('(guarantee vg_0123456789abcdef', n['then'])
+        self.assertNotIn('deal none', n['then'])
+        self.assertEqual(n['waiting_for_your_owner'], {'approval_id': 'va_0123456789abcdef', 'guarantee_id': 'vg_0123456789abcdef',
+                                                       'kind': 'guarantee_offer'})
+        self.assertNotIn('Spend again', json.dumps(n))
         self.assertNotIn(va.TOUR_DONE_KEY, self.agent.store.state, 'a held plan never marks the tour done')
+        self.world.inbox = inbox                 # the owner decided: the same holdings, and the tour's end is kept
+        n = self.steps()
+        self.assertEqual((n['tour_step'], n['goal'], 'waiting_for_your_owner' in n), ('done', 'The tour is complete.', False))
+        self.assertIn(va.TOUR_DONE_KEY, self.agent.store.state)
 
     def test_holdings_decide_the_next_deal_and_a_cycle_is_waited_for(self):
         self.world.welcome = False

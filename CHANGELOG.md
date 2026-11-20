@@ -25,12 +25,16 @@ and without a terminal refuses before anything is sent, naming both joins. A con
     only against such a reserve; the tracker's commitments are committed, not final.
   - `valun_status`'s summary and money view, what the client signs by itself, the notes you can spend; the deal-flow
     lines (offers, acceptances, deliveries, disputes, `note_issued`, payments by transfer, `whose_turn`, a deal's plain
-    ending and `valun_inbox`'s one line per closed deal, which now says how a note can be cleared, passed on or
-    redeemed); the approval texts (accepting a delivery, paying with a note you hold, which now shows the total of the
-    issuer's note to you and to the payee, and the guarantee texts, where a guarantee guarantees what an issuer owes);
-    what console holds and what a decision leaves; the tool titles and descriptions; the errors (`records_unreadable`,
-    `ledger_mismatch`, `already_paid`, the bound-note and set-off refusals); the tour's goals and texts; and join,
-    enroll, `policy show`, `attempts list` and the help.
+    ending and `valun_inbox`'s one line per closed deal, which now says how a note can be cleared or passed on, and on
+    the testnet redeemed, as the server's own summary does); the approval texts (accepting a delivery, paying with a
+    note you hold, which now shows the total of the issuer's note to you and to the payee, and the guarantee texts,
+    where a guarantee guarantees what an issuer owes, also in `valun_offer_guarantee`'s `deals`, the budget card's help
+    and, from a server before fix inbox #87, `valun_check_payer`'s "guaranteed for you up to N"); what console holds
+    and what a decision leaves; the tool titles and descriptions; the errors (`records_unreadable`, `ledger_mismatch`,
+    `already_paid`, the bound-note and set-off refusals, where a novation waits for an ordinary note you issued, not
+    one you hold); the tour's goals and texts; and join, enroll, `policy show`, `attempts list` and the help. A set-off
+    clears the same amount from each note in its loop, up to the smallest: the texts no longer say it clears all you
+    owe.
   - The pilot network's labels (`valun-pilot-1`) keep their words: the server's own pilot labels still say them, and a
     local server runs the pilot network.
   - The package descriptions (PyPI, npm, the MCP Registry entry, the Claude Code plugin), the package docstring, the
@@ -44,11 +48,11 @@ and without a terminal refuses before anything is sent, naming both joins. A con
   position is, in the server's words; `credit_notes_they_hold_PC` and `credit_notes_they_owe_PC` stay as they are.
 - **`valun join --sandbox` without `--approvals` asks whether a person will approve your agent's commitments** (fix
   inbox #164, option 3; Fitz's decision of 2026-11-20). 0.7.2 used console approvals then (#138), which stalled every
-  step of an agent nobody watched and left an owner on another machine no way to approve. Now, at a terminal (stdin and
-  stdout both one), join asks before anything is sent: yes gives console approvals, no gives none (your agent signs on
-  its own, within the self-serve limits); any other answer, Enter included, is asked again. With no terminal to ask in,
-  or when its input ends at the question, it refuses with exit 2, sends nothing and writes nothing, and prints both
-  joins, as written for this profile. The answer is recorded as if `--approvals` had been given: the owner mandate gets
+  step of an agent nobody watched. An owner on another machine still needs the owner token file moved to them: the
+  owner claim link is later work. Now, at a terminal (stdin and stdout both one), join asks before anything is sent:
+  yes gives console approvals, no gives none (your agent signs on its own, within the self-serve limits); any other
+  answer, Enter included, is asked again. With no terminal to ask in, or when its input ends at the question, it
+  refuses with exit 2, sends nothing and writes nothing, and prints both joins, as written for this profile. The answer is recorded as if `--approvals` had been given: the owner mandate gets
   exactly what that flag sends, and every command printed after it names it. An explicit `--approvals` is used as given,
   and nothing is asked; an invited join still uses ask. doctor's line before a join and `join --help` say so. A
   terminal is not proof of a person: an agent in a pseudo-terminal can answer, and the answer is recorded as given.
@@ -59,8 +63,12 @@ and without a terminal refuses before anything is sent, naming both joins. A con
   null while an approval waited, and every step but 1 to 5 read as complete. Now only a finished tour is complete;
   while a commitment waits for the owner, the plan keeps the step its holdings give (never done), its goal starts
   "Waiting for your owner: approval va_... (deal vd_...) is held for them in the owner console. Then: ...", and a new
-  key `waiting_for_your_owner` names the approval, the deal and its kind (in the brief view too). `valun sandbox tour`
-  treats such a plan as the owner's decision, as before: no step is said done while the owner decides.
+  key `waiting_for_your_owner` names the approval, the deal (or a guarantee offer's guarantee) and its kind (in the
+  brief view too). `valun sandbox tour` treats such a plan as the owner's decision, as before: no step is said done
+  while the owner decides. A delivery to make or review, or an offer to answer, on a deal the owner does not hold is
+  taken at once, with what waits said beside it (one of two held steps approved: deliver it; 0.7.2 waited for both).
+  Holdings that read done beside a held commitment that is not a tour step (a guarantee offer, say) are the end of the
+  tour: it is complete, and `then` says what still waits.
 - **A console join named https://valun.tech/start#approve on any server** (fix inbox #176). It now names the joined
   server's own `/start#approve`, beside that server's owner console; on valun.tech the line is unchanged.
 

@@ -519,11 +519,13 @@ def _approvals_choices(args, server, handle, operator, lacking=False):
             f'  if nobody will (your agent signs on its own, within the self-serve limits): {run("none")}']
 
 
-def _approvals_not_asked(args, server, handle, operator):
+def _approvals_not_asked(args, server, handle, operator, ended=False):
     """A sandbox join that names no --approvals, with no terminal to ask in (stdin or stdout is not one), or whose input
-    ended at the question: both joins to run instead. Nothing was sent. Exit 2, as _join_not_asked."""
+    ended at the question (ended: at a terminal, Ctrl+D, say): both joins to run instead. Nothing was sent. Exit 2, as
+    _join_not_asked."""
+    why = 'its input ended at the question' if ended else 'there is no terminal here to ask in'
     print("Nothing was sent: a sandbox join that names no --approvals asks whether a person will approve your agent's "
-          f'commitments, and there is no terminal here to ask in. Run one of these{_with_uvx()}:')
+          f'commitments, and {why}. Run one of these{_with_uvx()}:')
     print('\n'.join(_approvals_choices(args, server, handle, operator)))
     return 2
 
@@ -646,9 +648,10 @@ def cmd_join(args):
         # Fix inbox #164 option 3: whether a person will approve, asked only of a person at a terminal (stdin and stdout
         # both one); else, or when its input ends, both joins to run, and nothing is sent. The answer is recorded as if
         # --approvals had been given: the mandate gets what that flag sends, and every command printed after this names it.
-        mode = _ask_approvals(server) if _person_at_terminal() else None
+        at_terminal = _person_at_terminal()
+        mode = _ask_approvals(server) if at_terminal else None
         if mode is None:
-            return _approvals_not_asked(args, server, handle, operator)
+            return _approvals_not_asked(args, server, handle, operator, ended=at_terminal)
         args.approvals = args.approvals_given = mode
         args.approvals_answered = True
     refused = _token_file_refusal(args, server, handle, operator)
@@ -2062,8 +2065,8 @@ def _approvals_before_join(args, store):
     if lost:
         again = _lost_args(args, lost)
         if again.approvals is None:     # a sandbox join that named no --approvals asks again (fix inbox #164)
-            return (f'{head} The join in the FIX line below asks whether a person will approve them: console if one will, '
-                    'none if nobody will.')
+            return (f"{head} The join in the FIX line below asks whether a person will approve your agent's commitments: "
+                    'console if one will, none if nobody will (with no terminal it refuses and prints both joins).')
         kind = 'a sandbox' if again.sandbox else 'an invited'
         return (f'{head} The join in the FIX line below sets them to {again.approvals}'
                 + ('' if again.approvals_given else f", {kind} join's default") + '.')
@@ -3307,7 +3310,7 @@ def cmd_card(args):
     except vc.ValunError:
         page = None
     print('Your budget card is public' + (f': {_terminal_text(page, 200)}' if isinstance(page, str) and page else '.'))
-    print("Anyone can read it (your agent's limits and objective, the room it has left, its public backing and its record) "
+    print("Anyone can read it (your agent's limits and objective, the room it has left, its public guarantees and its record) "
           'and check a payment against it. To hide it again: '
           f'`{_valun()} --profile {name} card unpublish --owner-token-file FILE` (FILE: the file holding your owner token).')
     return 0
@@ -3871,8 +3874,8 @@ def main(argv=None):
     pf.add_argument('--wants', help='the work you pay other agents for ("" clears it)')
     pf.add_argument('--display-name', dest='display_name')
     pf.add_argument('--public-vouches', dest='public_vouches', choices=('on', 'off'),
-                    help='on: the guarantees between you and agents that also chose this are public on both cards (who backed '
-                         'whom, the cap, how calls were honored; never the creditor); off hides them again')
+                    help='on: the guarantees between you and agents that also chose this are public on both cards (who '
+                         'guaranteed whom, the cap, how calls were honored; never the creditor); off hides them again')
     pf.add_argument('--server')
     cd = sub.add_parser('card', help="budget cards: show one (yours by default), check a payer against one, or publish or "
                                      'hide yours (owner)', description=CARD_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -4017,7 +4020,7 @@ GET /ledger names as yours, and those your records show you signed with), with t
 is the state your records confirm with an issuer signature that verifies (signed), or the state a set-off your client
 signed gave it, with your own signature on it verifying (netted). First your client brings its records up to date
 from this profile's own server, as valun_status does: GET /pilot/v1/edges with this agent's token, each state checked
-against its issuer's signature before it is recorded, nothing signed (an IOU approved in the owner console after your
+against its issuer's signature before it is recorded, nothing signed (a note approved in the owner console after your
 agent's session ended is then in them, not a false "differs"). --no-refresh reads your records as they are.
 Exit codes (the server-side anchor audit's, so one watcher reads both): 0 MATCH (with --mine: every edge proven),
 1 MISMATCH and nothing else, 2 nothing was compared (UNKNOWN, with its reason; a usage error, such as a profile that
@@ -4034,9 +4037,10 @@ the API's own token counts); set a hard spend limit on the key's workspace in th
   valun join --sandbox --handle my-seller --operator "YOUR NAME" --about "AI summaries and code reviews" --approvals none
   ANTHROPIC_API_KEY=... valun sell --services summary,code-review
 
-It runs unattended, so it needs an owner mandate that holds none of its acceptances (--approvals none above; a profile
-with console approvals, what `join --sandbox` uses from valun 0.7.2 unless --approvals says otherwise, holds every
-one): it refuses to start, before any model call, while Ask me above in the owner console is below its prices.
+It runs unattended, so it needs an owner mandate that holds none of its acceptances (--approvals none above; without
+it, `join --sandbox` asks whether a person will approve, and refuses where there is no terminal; a profile with console
+approvals holds every one): it refuses to start, before any model call, while Ask me above in the owner console is
+below its prices.
 
 Services, priced in nanoERG on the testnet: summary, rewrite, translate and explain 2000000 nanoERG (0.002 tERG) each,
 code-review 3000000 nanoERG (0.003 tERG), and check 2000000 nanoERG (0.002 tERG: does a delivery meet its terms? the
@@ -4046,7 +4050,7 @@ buyer pastes the terms and the work). A job costs roughly
 
 CARD_HELP = """Budget cards. An owner may publish its agent's budget card: the limits of its mandate (per deal, in total,
 the amount above which the owner approves, how many counterparties it may deal with), its objective and expiry, the room
-it has left, the guarantees that back it in public, and its record. Anyone can read a card and check a payment against it.
+it has left, the guarantees that cover it in public, and its record. Anyone can read a card and check a payment against it.
 
   valun card                       your agent's own card (or that it is not public)
   valun card WHO                   the card of WHO, a handle or participant id (no joined profile needed)

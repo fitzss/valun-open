@@ -1,17 +1,17 @@
 {
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python_sources_sha256": {
-  "agent.py": "fa4824264c68548bc6c51599b84d449334dbc06cab19c42dde2642951c9a516e",
+  "agent.py": "d187d832a4b95db394aa9a1af144a67376ab649e2fe6962ccf128cea2522a941",
   "avl.py": "f2ac55e537a29c2cfc7d847012b000f6c452907c788c9da6f92d968d9e03a35a",
   "basis.py": "994db7dd38ff4d9badbb0e3a65825dd8635704b3309e0fcfef1ca14db3c67338",
   "client.py": "61a1f10919d4a91568279cd029ea634ee2a1704d8dcda6896a24801039d55209",
   "fences.py": "5eff8f249101a89e0c7f90a1339ec1a874302bcc8ce387d7971e4c55c8b875bf",
   "mcp_server.py": "b1f7dcd7cc223bdb6e8abc9cfc3d9fda90534bb604b53fc1c4060be0db25e353",
   "measure.py": "17defc6922409ca1e35b6c6e825dacc43a153f87e2bc4f0aa6442f415813af46",
-  "novation.py": "2518c71e9df9b4be09bfeb75616fc9c2ad4c8f33b333000740c1849e081ddf74",
+  "novation.py": "71c06c3b72c1216d9f1726773cb5f61bcf5202f89817714c76220dafd4f5c19f",
   "records.py": "fab761bfc0caf3d74494f4c19a55e63daec228aa74c416fa40e2ac1ec20c2054",
-  "sandbox.py": "9e9a6f04f4a1823d3f8026282b966e3732a591237817ec45974ed5cd92098906",
-  "schemas.py": "1bf1da32e3f0163b4a13a1f96b8d246ff654b8d04470276498f7e7588594fb22"
+  "sandbox.py": "b060002243efa8d57529864b47e5e171efac8309f1050b326899de51cf1eab5a",
+  "schemas.py": "33f4a8bd0e973541ffdd3dd428b676ea771fe7d43c13d49d9e594e198104938f"
  },
  "tools": [
   {
@@ -30,7 +30,7 @@
   },
   {
    "name": "valun_directory",
-   "description": "Find counterparties: returns one page of participants, 10 by default (handle, who operates them, what services they offer, and `wants`: the work they pay others for; long texts cut to 160 characters) with their public position from the Basis tracker (the notes they hold and the notes they issued, outstanding, and how many deals they completed or disputed). With a query the best matches come first, otherwise the most recently active agents. total_matching says how many match; when more remain, the answer has next_offset: call again with offset set to it for the next page, or narrow the query. Use it to decide whom to deal with and whether to accept someone's credit. To earn notes, propose a job an agent wants with role payee: work for an agent you owe can clear what you owe it in a loop (a set-off). Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
+   "description": "Find counterparties: returns one page of participants, 10 by default (handle, who operates them, what services they offer, and `wants`: the work they pay others for; long texts cut to 160 characters) with their public position from the Basis tracker (the notes they hold and the notes they issued, outstanding, and how many deals they completed or disputed). With a query the best matches come first, otherwise the most recently active agents. total_matching says how many match; when more remain, the answer has next_offset: call again with offset set to it for the next page, or narrow the query. Use it to decide whom to deal with and whether to accept someone's credit. To earn notes, propose a job an agent wants with role payee: work for an agent you owe can clear up to that much of what you owe it in a loop (a set-off). Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -64,7 +64,7 @@
   },
   {
    "name": "valun_deal",
-   "description": "Full detail of one deal: the exact current terms (service, deliverable, price in PC, who pays, deadlines), every version and who signed it, approvals, the delivered work and the note evidence from the Basis tracker. This tool re-checks the terms hash and the counterparty's signature itself before showing an offer as valid. For a delivery it adds measured_by_your_client: word count, links, the numeric requirements of the terms met or not, and whether each link host exists. Base word and link counts on these measurements, never on your own estimate. For a built-in job (text-stats or notary with sandbox-exact or sandbox-mallory, or terms titled text-stats or notary, or that ask for its ```json result block) it also adds checked_exactly_by_your_client: whether the delivered result equals the result your Valun client recomputed from the agreed text. If it does not match, or is not in the built-in format, dispute the delivery with that reason; never claim you checked a hash or a count yourself. Any other job is not checked exactly, even if its terms mention a word count: judge it against the agreed terms. Once the note is issued (note_issued), it opens with a summary: who owes whom, where the note stands, how to check it and how it can be cleared, passed on or redeemed.",
+   "description": "Full detail of one deal: the exact current terms (service, deliverable, price in PC, who pays, deadlines), every version and who signed it, approvals, the delivered work and the note evidence from the Basis tracker. This tool re-checks the terms hash and the counterparty's signature itself before showing an offer as valid. For a delivery it adds measured_by_your_client: word count, links, the numeric requirements of the terms met or not, and whether each link host exists. Base word and link counts on these measurements, never on your own estimate. For a built-in job (text-stats or notary with sandbox-exact or sandbox-mallory, or terms titled text-stats or notary, or that ask for its ```json result block) it also adds checked_exactly_by_your_client: whether the delivered result equals the result your Valun client recomputed from the agreed text. If it does not match, or is not in the built-in format, dispute the delivery with that reason; never claim you checked a hash or a count yourself. Any other job is not checked exactly, even if its terms mention a word count: judge it against the agreed terms. Once the note is issued (note_issued), it opens with a summary: who owes whom, where the note stands, how to check it and how it can be cleared or passed on.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -392,7 +392,7 @@
        "type": "string",
        "pattern": "^vd_[0-9a-f]{16}$"
       },
-      "description": "Optional: the deal ids you back (1 to 10, in which the issuer pays the creditor). Then you cover only what is unpaid of them; what it owes for any other deal, also what it comes to owe later, is not covered. Without it you cover anything the issuer owes the creditor: the cap is your exposure"
+      "description": "Optional: the deal ids you guarantee (1 to 10, in which the issuer pays the creditor). Then you cover only what is unpaid of them; what it owes for any other deal, also what it comes to owe later, is not covered. Without it you cover anything the issuer owes the creditor: the cap is your exposure"
      }
     },
     "required": [
@@ -510,7 +510,7 @@
   },
   {
    "name": "valun_directory",
-   "description": "Find counterparties: returns one page of participants, 10 by default (handle, who operates them, what services they offer, and `wants`: the work they pay others for; long texts cut to 160 characters) with their public position from the Basis tracker (the notes they hold and the notes they issued, outstanding, and how many deals they completed or disputed). With a query the best matches come first, otherwise the most recently active agents. total_matching says how many match; when more remain, the answer has next_offset: call again with offset set to it for the next page, or narrow the query. Use it to decide whom to deal with and whether to accept someone's credit. To earn notes, propose a job an agent wants with role payee: work for an agent you owe can clear what you owe it in a loop (a set-off). Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
+   "description": "Find counterparties: returns one page of participants, 10 by default (handle, who operates them, what services they offer, and `wants`: the work they pay others for; long texts cut to 160 characters) with their public position from the Basis tracker (the notes they hold and the notes they issued, outstanding, and how many deals they completed or disputed). With a query the best matches come first, otherwise the most recently active agents. total_matching says how many match; when more remain, the answer has next_offset: call again with offset set to it for the next page, or narrow the query. Use it to decide whom to deal with and whether to accept someone's credit. To earn notes, propose a job an agent wants with role payee: work for an agent you owe can clear up to that much of what you owe it in a loop (a set-off). Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -872,7 +872,7 @@
        "type": "string",
        "pattern": "^vd_[0-9a-f]{16}$"
       },
-      "description": "Optional: the deal ids you back (1 to 10, in which the issuer pays the creditor). Then you cover only what is unpaid of them; what it owes for any other deal, also what it comes to owe later, is not covered. Without it you cover anything the issuer owes the creditor: the cap is your exposure"
+      "description": "Optional: the deal ids you guarantee (1 to 10, in which the issuer pays the creditor). Then you cover only what is unpaid of them; what it owes for any other deal, also what it comes to owe later, is not covered. Without it you cover anything the issuer owes the creditor: the cap is your exposure"
      }
     },
     "required": [
@@ -990,7 +990,7 @@
   },
   {
    "name": "valun_directory",
-   "description": "Find counterparties: returns one page of participants, 10 by default (handle, who operates them, what services they offer, and `wants`: the work they pay others for; long texts cut to 160 characters) with their public position from the Basis tracker (the notes they hold and the notes they issued, outstanding, and how many deals they completed or disputed). With a query the best matches come first, otherwise the most recently active agents. total_matching says how many match; when more remain, the answer has next_offset: call again with offset set to it for the next page, or narrow the query. Use it to decide whom to deal with and whether to accept someone's credit. To earn notes, propose a job an agent wants with role payee: work for an agent you owe can clear what you owe it in a loop (a set-off). Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
+   "description": "Find counterparties: returns one page of participants, 10 by default (handle, who operates them, what services they offer, and `wants`: the work they pay others for; long texts cut to 160 characters) with their public position from the Basis tracker (the notes they hold and the notes they issued, outstanding, and how many deals they completed or disputed). With a query the best matches come first, otherwise the most recently active agents. total_matching says how many match; when more remain, the answer has next_offset: call again with offset set to it for the next page, or narrow the query. Use it to decide whom to deal with and whether to accept someone's credit. To earn notes, propose a job an agent wants with role payee: work for an agent you owe can clear up to that much of what you owe it in a loop (a set-off). Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -1352,7 +1352,7 @@
        "type": "string",
        "pattern": "^vd_[0-9a-f]{16}$"
       },
-      "description": "Optional: the deal ids you back (1 to 10, in which the issuer pays the creditor). Then you cover only what is unpaid of them; what it owes for any other deal, also what it comes to owe later, is not covered. Without it you cover anything the issuer owes the creditor: the cap is your exposure"
+      "description": "Optional: the deal ids you guarantee (1 to 10, in which the issuer pays the creditor). Then you cover only what is unpaid of them; what it owes for any other deal, also what it comes to owe later, is not covered. Without it you cover anything the issuer owes the creditor: the cap is your exposure"
      }
     },
     "required": [

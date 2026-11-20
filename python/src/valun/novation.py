@@ -978,8 +978,9 @@ class _Run:
             for p in self.pair(edge)[1]:
                 if p.get('kind') == 'note' and p.get('direction') == 'out' and p['timestamp'] % 1000 < RESERVED_MS[0] \
                         and p['timestamp'] > after:
-                    self.refuse('pending_unbound_note', 'you hold an unapplied ordinary note on this edge; a '
-                                                        'novation is signed only once it is settled either way')
+                    self.refuse('pending_unbound_note', 'an ordinary note you issued on this edge has not applied '
+                                                        'yet; a novation is signed only once it has applied or can '
+                                                        'no longer apply')
 
     def no_bound_note_restored(self, changes):
         """R12 extended, the client side of decision D-2 c: never sign a novation that sets an edge of mine (as issuer)
