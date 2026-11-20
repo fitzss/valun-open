@@ -187,10 +187,16 @@ class Base(unittest.TestCase):
         with open(self.path(name), 'w', encoding='utf-8') as f:
             json.dump(state, f)
 
-    def cli(self, *argv, stdin='', profile='m'):
-        out = io.StringIO()
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out), \
-                mock.patch.object(sys, 'stdin', io.StringIO(stdin)):
+    def cli(self, *argv, stdin='', profile='m', answers=None):
+        """cli.main, with `stdin` as its input; with answers, at a terminal (stdin and stdout) whose input() answers
+        them."""
+        out = EndedInput() if answers is not None else io.StringIO()
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(contextlib.redirect_stdout(out))
+            stack.enter_context(contextlib.redirect_stderr(out))
+            stack.enter_context(mock.patch.object(sys, 'stdin', EndedInput(stdin) if answers is not None else io.StringIO(stdin)))
+            if answers is not None:
+                stack.enter_context(mock.patch('builtins.input', side_effect=answers))
             rc = cli.main(['--profile', profile, *argv])
         self.assertNotIn('Traceback', out.getvalue())
         return rc, out.getvalue()
@@ -487,7 +493,7 @@ class EnrollSettings(Base):
         c.info()
         self.assertEqual(c.features_header(), 'consents/1;roles=setoff,issuer,creditor')
         # the same settings as `valun join --sandbox` writes (in a profile of its own)
-        rc, out = self.cli('join', '--sandbox', '--handle', 'joined-one', '--operator', 'Fitz', '--server', SERVER,
+        rc, out = self.cli('join', '--sandbox', '--approvals', 'console', '--handle', 'joined-one', '--operator', 'Fitz', '--server', SERVER,
                            '--owner-token-file', os.path.join(self.home, 'owner-j.txt'), profile='j')
         self.assertEqual(rc, 0, out)
         joined = self.disk('j')
@@ -514,7 +520,7 @@ class EnrollSettings(Base):
         self.assertIn('and signs them in the background while `valun --profile m mcp` (consent_loop on) or `valun '
                       '--profile m clearing watch` runs.', out)
         self.net.lose['POST /pilot/v1/enroll'] = ['before'] * vc.ENROLL_TRIES
-        rc, out = self.cli('join', '--sandbox', '--handle', 'joined-two', '--operator', 'Fitz', '--server', SERVER,
+        rc, out = self.cli('join', '--sandbox', '--approvals', 'console', '--handle', 'joined-two', '--operator', 'Fitz', '--server', SERVER,
                            '--owner-token-file', os.path.join(self.home, 'owner-k.txt'), profile='k')
         self.assertEqual(rc, 1, out)
         self.assertNotIn('From a shell', out, 'not joined yet')
@@ -711,12 +717,12 @@ class LostJoinAnswer(Base):
 
     def test_a_refusal_of_the_handle_leaves_no_lost_join_and_the_command_quotes_what_it_can(self):
         self.net.lose['POST /pilot/v1/join-sandbox'] = ['after']
-        rc, out = self.cli('join', '--sandbox', '--handle', 'new-user', '--operator', "O'Brien", '--about', 'x' * 301,
+        rc, out = self.cli('join', '--sandbox', '--approvals', 'console', '--handle', 'new-user', '--operator', "O'Brien", '--about', 'x' * 301,
                            '--server', SERVER)
         # O'Brien in double quotes (the 0.7.2 review: it was "YOUR NAME", a placeholder a server accepted); an --about
         # longer than a command can carry is named apart
-        self.assertIn('''--handle new-user --operator "O'Brien" --server https://valun.example` (with the same --about as '''
-                      'before)', out)
+        self.assertIn('''--handle new-user --operator "O'Brien" --approvals console --server https://valun.example` (with the '''
+                      'same --about as before)', out)
         self.assertNotIn('YOUR NAME', out)
         for unquotable in ("O'Brien $HOME", "it's 100%", "O'Brien \"Jr\"", "don't!", 'x' * 61, 'a "b" c'):
             self.assertIsNone(cli._faithful(unquotable, 60), unquotable)
@@ -875,23 +881,38 @@ class DoctorBeforeAJoin(Base):
         self.assertEqual(rc, 1, out)
         self.assertIn('FIX   Not connected: run `valun --profile m join --sandbox --handle YOUR-HANDLE', out)
         self.assertNotIn('Approvals: ask', out)
-        self.assertIn('ok    Approvals: not set yet (this profile has not joined). A sandbox join uses console approvals unless '
-                      '--approvals says otherwise: your agent signs at once, and the Valun server holds your agent\'s offers '
-                      'and counter-offers, its acceptances (taking a job included), its guarantee offers, and the IOU or '
-                      'payment by transfer it signs when it accepts a delivery for you in the owner console. A join with an '
-                      'invite uses ask: you are asked before your agent signs', out)
+        self.assertIn("ok    Approvals: not set yet (this profile has not joined). A sandbox join asks whether a person will "
+                      "approve your agent's commitments: console if one will (your agent signs at once, and the Valun "
+                      "server holds your agent's offers and counter-offers, its acceptances (taking a job included), its "
+                      'guarantee offers, and the note or payment by transfer it signs when it accepts a delivery for them '
+                      'in the owner console), none if nobody will (it signs on its own within the self-serve limits); '
+                      '--approvals answers it beforehand. A join with an invite uses ask: you are asked before your agent '
+                      'signs', out)
 
     def test_a_lost_join_names_the_mode_of_the_join_it_runs_again(self):
+        # a join whose approvals were answered at the terminal (fix inbox #164): recorded as given, and run again so
         self.net.lose['POST /pilot/v1/join-sandbox'] = ['after']
         rc, out = self.cli('join', '--sandbox', '--handle', 'new-user', '--operator', 'Fitz', '--server', SERVER,
-                           '--owner-token-file', self.token_file)
+                           '--owner-token-file', self.token_file, answers=['yes'])
         self.assertEqual(rc, 1, out)
+        self.assertEqual(self.disk()[cli.LOST_JOIN]['approvals'], 'console')
         rc, out = self.doctor()
         self.assertIn('FIX   Not connected yet: this profile\'s join of new-user', out)
+        self.assertIn('--approvals console', out)
         self.assertNotIn('Approvals: ask', out)
         self.assertIn('ok    Approvals: not set yet (this profile has not joined). The join in the FIX line below sets them '
-                      "to console, a sandbox join's default.", out)
+                      'to console.', out)
         self.assertLess(out.index('ok    Approvals: not set yet'), out.index('FIX   Not connected yet'), 'the FIX line is below')
+        # a lost join that named no mode (as 0.7.2 recorded one): the join doctor names asks again
+        disk = self.disk()
+        del disk[cli.LOST_JOIN]['approvals']
+        with open(self.path(), 'w', encoding='utf-8') as f:
+            json.dump(disk, f)
+        rc, out = self.doctor()
+        self.assertIn('ok    Approvals: not set yet (this profile has not joined). The join in the FIX line below asks whether '
+                      'a person will approve them: console if one will, none if nobody will.', out)
+        fix = next(x for x in out.splitlines() if x.strip().startswith('FIX   Not connected yet'))
+        self.assertNotIn('--approvals', fix)
         # a lost join that named its mode runs it again, and doctor says so
         self.net.lose['POST /pilot/v1/join-sandbox'] = ['after']
         rc, out = self.cli('join', '--sandbox', '--handle', 'h-lee', '--operator', 'Fitz', '--approvals', 'none',
@@ -945,19 +966,20 @@ class PrintedCommandsInEveryShell(Base):
 
     def test_a_lost_join_and_the_console_note_print_double_quotes(self):
         self.net.lose['POST /pilot/v1/join-sandbox'] = ['after']
-        rc, out = self.cli('join', '--sandbox', '--handle', 'new-user', '--operator', 'Valun QA rc072', '--server', SERVER,
+        rc, out = self.cli('join', '--sandbox', '--approvals', 'console', '--handle', 'new-user', '--operator', 'Valun QA rc072', '--server', SERVER,
                            '--owner-token-file', self.token_file)
         self.assertEqual(rc, 1, out)
-        self.assertIn(f'--handle new-user --operator "Valun QA rc072" --owner-token-file {cli._shell_word(self.token_file, 300)} '
-                      f'--server {SERVER}`', out)
+        self.assertIn(f'--handle new-user --operator "Valun QA rc072" --approvals console --owner-token-file '
+                      f'{cli._shell_word(self.token_file, 300)} --server {SERVER}`', out)
         self.assertNotIn("'Valun QA rc072'", out)
-        # a join with console approvals (the sandbox default): its note names the owner token file in double quotes
+        # a join whose approvals question was answered (yes: console): its note names the owner token file in double
+        # quotes
         os.makedirs(os.path.join(self.home, 'Ann Lee'))
         written = os.path.abspath(os.path.join(self.home, 'Ann Lee', 'owner.txt'))
         rc, out = self.cli('join', '--sandbox', '--handle', 'h-lee', '--operator', 'Ann Lee', '--server', SERVER,
-                           '--owner-token-file', written, profile='n')
+                           '--owner-token-file', written, profile='n', answers=['yes'])
         self.assertEqual(rc, 0, out)
-        self.assertIn(f'config approvals MODE --owner-token-file "{written}"` (MODE: ask, client-prompt or none).', out)
+        self.assertIn(f'If nobody will: `valun --profile n config approvals none --owner-token-file "{written}"`.', out)
         self.assertNotIn(f"'{written}'", out)
 
     def test_each_quoted_value_is_one_argument_in_the_shells_of_this_machine(self):
@@ -1027,10 +1049,10 @@ class NoTerminal(Base):
     with what they lack, and send nothing (exit 2); an input that ends at a prompt does the same."""
 
     def test_a_join_that_lacks_what_it_would_ask_for_prints_the_command_to_run(self):
-        cases = ((['--sandbox'], 'a handle and an operator name',
-                  f'Run `valun --profile m join --sandbox --handle YOUR-HANDLE --operator "YOUR NAME" --server {SERVER}`, '
-                  'with your own handle (public and permanent: 3 to 24 letters, digits, _ or -, starting with a letter) '
-                  'and your name (public: who controls this agent).'),
+        cases = ((['--sandbox', '--approvals', 'console'], 'a handle and an operator name',
+                  f'Run `valun --profile m join --sandbox --handle YOUR-HANDLE --operator "YOUR NAME" --approvals console '
+                  f'--server {SERVER}`, with your own handle (public and permanent: 3 to 24 letters, digits, _ or -, '
+                  'starting with a letter) and your name (public: who controls this agent).'),
                  (['--sandbox', '--handle', 'new-user', '--approvals', 'none', '--about', 'Summaries.'], 'an operator name',
                   f'Run `valun --profile m join --sandbox --handle new-user --operator "YOUR NAME" --about Summaries. '
                   f'--approvals none --server {SERVER}`, with your name (public: who controls this agent).'),
@@ -1049,6 +1071,20 @@ class NoTerminal(Base):
         self.assertIn(f'No invite code? Join without one: `valun --profile m join --sandbox --handle YOUR-HANDLE --operator '
                       f'"YOUR NAME" --server {SERVER}`.', out)
         self.assertNotIn('Ctrl+C', out)
+        # a sandbox join that names no --approvals: what it lacks, whether a person will approve, and both joins (#164)
+        self.net.calls.clear()
+        rc, out = self.cli('join', '--sandbox', '--server', SERVER)
+        self.assertEqual(rc, 2, out)
+        self.assertIn("Nothing was sent: this join needs a handle and an operator name and whether a person will approve "
+                      "your agent's commitments, and there is no terminal here to ask for them. Run one of these, with your "
+                      'own handle (public and permanent: 3 to 24 letters, digits, _ or -, starting with a letter) and your '
+                      'name (public: who controls this agent):\n'
+                      f'  if a person will approve each one in the owner console ({SERVER}/pilot#owner): `valun --profile m '
+                      f'join --sandbox --handle YOUR-HANDLE --operator "YOUR NAME" --approvals console --server {SERVER}`\n'
+                      '  if nobody will (your agent signs on its own, within the self-serve limits): `valun --profile m join '
+                      f'--sandbox --handle YOUR-HANDLE --operator "YOUR NAME" --approvals none --server {SERVER}`', out)
+        self.assertEqual(self.net.calls, [], 'nothing was sent')
+        self.assertFalse(os.path.exists(self.path()), 'nothing was written')
 
     def test_an_input_that_ends_at_a_prompt_prints_the_command_too(self):
         # NUL is a "terminal" on Windows: the prompt is shown, and its input ends at once
@@ -1060,8 +1096,10 @@ class NoTerminal(Base):
             self.assertEqual(rc, 2, out.getvalue())
             self.assertNotIn('Traceback', out.getvalue())
             self.assertIn('Nothing was sent: this join needs ', out.getvalue())
-            self.assertIn(f'`valun --profile m join --sandbox --handle {extra[-1] if len(extra) > 1 else "YOUR-HANDLE"} '
-                          f'--operator "YOUR NAME" --server {SERVER}`', out.getvalue())
+            # stdout is not a terminal here: the approvals question cannot be asked either, so both joins (#164)
+            for mode in ('console', 'none'):
+                self.assertIn(f'`valun --profile m join --sandbox --handle {extra[-1] if len(extra) > 1 else "YOUR-HANDLE"} '
+                              f'--operator "YOUR NAME" --approvals {mode} --server {SERVER}`', out.getvalue())
         self.assertEqual(self.net.calls, [])
         # at a terminal that answers, join asks as before
         with contextlib.redirect_stdout(io.StringIO()) as out, mock.patch.object(sys, 'stdin', EndedInput('h-new\nFitz\n')):

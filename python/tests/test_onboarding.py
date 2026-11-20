@@ -56,6 +56,13 @@ def _no_valun_install(name):
     return _REAL_DISTRIBUTION(name)
 
 
+class Terminal(io.StringIO):
+    """A stream that says it is a terminal."""
+
+    def isatty(self):
+        return True
+
+
 class FakeServer:
     """Every vc.Client request: the answer for 'METHOD /path' (a value, a callable of (client, body, token), or a
     ValunError to raise; unauthorized for a route it does not list, as for an agent the server does not know)."""
@@ -109,11 +116,16 @@ class Profiles(unittest.TestCase):
         with open(self.path(name), encoding='utf-8') as f:
             return json.load(f)
 
-    def cli(self, *argv, stdin=''):
-        """cli.main(argv): (exit code, stdout, stderr)."""
-        out, err = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err), \
-                mock.patch.object(sys, 'stdin', io.StringIO(stdin)):
+    def cli(self, *argv, stdin='', answers=None):
+        """cli.main(argv): (exit code, stdout, stderr). With answers: at a terminal (stdin and stdout), whose input()
+        answers them."""
+        out, err = (Terminal() if answers is not None else io.StringIO()), io.StringIO()
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(contextlib.redirect_stdout(out))
+            stack.enter_context(contextlib.redirect_stderr(err))
+            stack.enter_context(mock.patch.object(sys, 'stdin', Terminal(stdin) if answers is not None else io.StringIO(stdin)))
+            if answers is not None:
+                stack.enter_context(mock.patch('builtins.input', side_effect=answers))
             rc = cli.main(list(argv))
         return rc, out.getvalue(), err.getvalue()
 
@@ -154,7 +166,10 @@ class RetiredPilot(Profiles):
             'POST /pilot/v1/enroll': {'participant_id': NEW_ID, 'agent_token': 'vpa_NEW-test-only',
                                       'network': 'valun-testnet-1'},
             'GET /pilot/v1/owner': {'mandate': mandate}, 'PUT /pilot/v1/owner/mandate': {}})
-        rc, out, _err = self.cli(*argv)
+        rc, out, _err = self.cli(*argv)             # with no terminal it asks nothing: both joins (fix inbox #164)
+        self.assertEqual(rc, 2, out)
+        self.assertIn('Nothing was sent: a sandbox join that names no --approvals asks whether a person will approve', out)
+        rc, out, _err = self.cli(*argv, answers=['no'])     # run as written in a terminal: nobody will approve
         self.assertEqual(rc, 0, out)
         new = self.read('testnet')
         self.assertEqual((new['participant_id'], new['network']), (NEW_ID, 'valun-testnet-1'))

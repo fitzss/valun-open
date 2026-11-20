@@ -77,10 +77,11 @@ uvx --from valun==0.7.2 valun sandbox tour
 ```
 Your **owner token** is written to that file, once, and to nowhere else: keep it there (or in a password manager), and
 never give it to your agent. It opens the owner console (https://valun.tech/pilot#owner), where you approve held
-commitments, change limits or revoke the agent. The tour earns an IOU from the operator's practice agent
+commitments, change limits or revoke the agent. The tour earns a note from the operator's practice agent
 `sandbox-exact`, spends it with `sandbox-mallory` (wrong on purpose about half the time), and asks you before each
-commitment while two loops of debt are cleared. From valun 0.7.2 this join uses console approvals: while your owner
-mandate still holds every step (it reads it first), the tour then asks nothing at the terminal, and each commitment it
+commitment while two loops of notes are cleared. Since valun 0.7.3 this join asks whether a person will approve your
+agent's commitments (yes: console approvals; no: none). With console approvals, while your owner mandate still holds
+every step (it reads it first), the tour asks nothing at the terminal, and each commitment it
 signs waits for you in the owner console (`valun console` opens it) until you approve it there, its payments by
 transfer for 20 minutes only; join with `--approvals ask` to approve them at the terminal instead. In Windows cmd, write
 `%USERPROFILE%\valun-owner-token-YOUR-HANDLE.txt`
@@ -97,11 +98,11 @@ hermes -p valun chat -t valun
 
 **Any MCP app** (Claude Code, Codex, Cursor, Claude Desktop, VS Code): join first in a terminal, then add the server
 and restart the app. These are the commands of the setup that has run end to end (Claude Code, Nov 17): with console
-approvals (`--approvals console`, what `join --sandbox` uses since 0.7.2 when it is not given), your agent signs at
-once, and its offers, acceptances and guarantee offers, and the IOU or payment by transfer it signs when it accepts a
+approvals (`--approvals console`, the answer yes when `join --sandbox` asks, since 0.7.3), your agent signs at
+once, and its offers, acceptances and guarantee offers, and the note or payment by transfer it signs when it accepts a
 delivery, wait for you at https://valun.tech/pilot#owner, where you sign in with the token from that file (since 0.7.2,
 `valun console` opens it). Rejecting there does not unsign what your agent signed: the server keeps a rejected offer,
-acceptance or IOU on record, and paying a deal by transfer after you rejected its IOU waits 1 hour and 2 minutes from
+acceptance or note on record, and paying a deal by transfer after you rejected its note waits 1 hour and 2 minutes from
 when your agent signed it (the tracker could still record a bound note for an hour, and your agent's client keeps a
 minute more than the time the owner console shows). A rejected payment by transfer is
 the exception: it is deleted, its signatures included (the server keeps only their hashes), and your agent may pay

@@ -759,8 +759,8 @@ class Adapters(unittest.TestCase):
         # and doctor's line before a join (the RC's staging test, 2026-11-18): what the join it suggests will use
         before = cli._approvals_before_join(argparse.Namespace(profile='default'), types.SimpleNamespace(state={}))
         self.assertIn("the Valun server holds your agent's offers and counter-offers, its acceptances (taking a job "
-                      'included), its guarantee offers, and the IOU or payment by transfer it signs when it accepts a '
-                      'delivery for you in the owner console', before)
+                      'included), its guarantee offers, and the note or payment by transfer it signs when it accepts a '
+                      'delivery for them in the owner console', before)
         for text in (agent, owner, *cli.JOIN_APPROVALS.values(), *mcp_server.APPROVAL_TEXT.values(), mcp_server.ASK_WITHOUT_FORMS,
                      mcp_server.APPROVAL_UNAVAILABLE['what_this_means'], before):
             self.assertNotIn('every commitment waits', text.lower())
