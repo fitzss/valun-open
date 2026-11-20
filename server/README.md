@@ -47,8 +47,8 @@ spending caps) and the bootstrap; `basis/run-tracker-testnet.sh` starts the trac
 
 ## Run it
 
-A prebuilt local image, to try Valun on your own machine with one `docker run` and no chain, is being prepared. It
-isn't public yet (see "A local server with no chain" below).
+A prebuilt local image, to try Valun on your own machine with one `docker run` and no chain, is optional, and public:
+pulling it needs no login (to run it, see "A local server with no chain" below).
 
 To run the server itself, you need Node 22 or later and the two Linux binaries `basis_server` and `valun_signer`.
 Circulating credit takes effect only on a tracker whose binary's sha256 is listed in `lib/pilot/pins.mjs`: on the
