@@ -695,11 +695,14 @@ const GUARANTEE_ID_WORDS = 'guarantee_id is missing or malformed (vg_ + 16 hex; 
  * argument and what it must be): {tool: {argument: message, or a function of (the value, the unit)}}. The Python core's
  * _SAID.
  */
+const OFFER_PAY_WITH_WORDS = "pay_with is 'own_note' or the handle or id of the participant whose note the payer will pass on; nothing was signed";
 const SAID = {
   valun_status: {brief: 'brief must be true or false'},
   valun_directory: Object.fromEntries(['limit', 'offset'].map(k => [k, v => pageMessage(k, v, PAGE_WORDS[k])])),
-  valun_propose: Object.fromEntries(['price', 'deliver_within_hours', 'offer_valid_hours'].map(k => [k, (v, unit) => countMessage(k, v, k === 'price' ? unit : 'hours')])),
-  valun_respond: Object.fromEntries(['price', 'deliver_within_hours', 'offer_valid_hours'].map(k => [k, (v, unit) => countMessage(k, v, k === 'price' ? unit : 'hours')])),
+  valun_propose: {...Object.fromEntries(['price', 'deliver_within_hours', 'offer_valid_hours'].map(k => [k, (v, unit) => countMessage(k, v, k === 'price' ? unit : 'hours')])),
+    pay_with: OFFER_PAY_WITH_WORDS},
+  valun_respond: {...Object.fromEntries(['price', 'deliver_within_hours', 'offer_valid_hours'].map(k => [k, (v, unit) => countMessage(k, v, k === 'price' ? unit : 'hours')])),
+    pay_with: OFFER_PAY_WITH_WORDS},
   valun_deliver: {exact_result: 'exact_result is true or false'},
   valun_review_delivery: {pay_with: "pay_with is 'own_note' or the handle or id of an issuer whose note you hold"},
   valun_guarantees: {guarantee_id: GUARANTEE_ID_WORDS},
@@ -1506,6 +1509,31 @@ export function owes(role, who, price, unit = UNIT, circulating = false) {
 }
 
 /** The tracker a credit note goes to, in an approval text. */
+/**
+ * What terms that name a payment issuer mean (payment_issuer; fix inbox #192/#196), for the party in `role` (payer or
+ * payee): `other` the other party and `issuer` the issuer, as shown. The Python core's payment_issuer_words.
+ */
+export function paymentIssuerWords(role, other, issuer) {
+  if (role === 'payee') {
+    return `${other} will pay by passing you a note issued by ${issuer}, not a note of its own; no other note pays `
+      + 'these terms. Accepting them agrees to that; declining or countering refuses it';
+  }
+  return `you will pay ${other} by passing on a note issued by ${issuer} that you hold, not a note of your own; no `
+    + 'other note pays these terms';
+}
+
+/** A payment issuer {id, pubkey} as one computed value: 'handle (id)' when the handle is known, else the id. */
+export function paymentIssuerShown(pi, handle = null) {
+  const pid = isDict(pi) ? get(pi, 'id') : null;
+  return typeof handle === 'string' && handle ? `${shown(handle)} (${shown(pid)})` : shown(pid);
+}
+
+/** The handle the deal view names for payment issuer `pi` (its payment_issuer, when it is the same id), or null. */
+function issuerHandle(snap, pi) {
+  const srv = isDict(snap.deal) ? get(snap.deal, 'payment_issuer') : null;
+  return isDict(srv) && isDict(pi) && get(srv, 'id') === get(pi, 'id') ? get(srv, 'handle') : null;
+}
+
 export function trackerWords(network) {
   return network === TESTNET ? 'the Valun testnet tracker (anchored on Ergo testnet)' : 'the pilot tracker';
 }
@@ -2458,8 +2486,11 @@ export class ValunAgent {
     let bound, text;
     try {
       this.toolArguments(name, args);                 // fix inbox #58: not a JSON object, a required argument missing, or one of the wrong type
-      const render = this.#textFor(name, a);          // before any read: a misspelt action or decision has no text
+      let render = this.#textFor(name, a);            // before any read: a misspelt action or decision has no text
       const snap = await this.#snapshot(name, a);
+      if (name === 'valun_review_delivery' && (snap.transfer ?? null) !== null) {
+        render = (b, s) => this.#textPay(b, s);       // terms that name a payment issuer: paid with its note (#192/#196)
+      }
       if (LIMIT_TOOLS.includes(name) && !loosens(or(get(snap.me, 'agent_limits'), {}), limitsBody(a))) {
         return {args: a, text: null};                 // this read shows nothing loosened: nothing to approve
       }
@@ -2591,7 +2622,10 @@ export class ValunAgent {
         throw new ValunError('approval_unbound', 'the directory names no participant id');
       }
       const circulating = await this.#knownCirculation(c);
-      return {counterparty: other, circulating, not_settled: labels(circulating, net).not_settled, unit, network: net};
+      const snap = {counterparty: other, circulating, not_settled: labels(circulating, net).not_settled, unit, network: net};
+      const issuer = await this.#offerIssuer(c, a);
+      if (issuer !== null) snap.pay_with = issuer;
+      return snap;
     }
     if (name === 'valun_set_limits') {
       const me = await c.me();
@@ -2632,11 +2666,44 @@ export class ValunAgent {
     snap.not_settled = labels(snap.circulating, net).not_settled;
     snap.unit = unit;
     snap.network = net;
-    if (name === 'valun_review_delivery' && get(a, 'decision') === 'accept' && ValunAgent.#payWith(a) !== null) {
-      snap.transfer = await this.#transferSnapshot(c, did, snap.checked, ValunAgent.#payWith(a));
-      snap.not_settled = labels(true, net).not_settled;
+    if (name === 'valun_respond' && get(a, 'action') === 'counter') {
+      const issuer = await this.#offerIssuer(c, a);
+      if (issuer !== null) snap.pay_with = issuer;
+    }
+    if (name === 'valun_review_delivery' && get(a, 'decision') === 'accept') {
+      let pay = ValunAgent.#payWith(a);
+      const named = get(snap.checked.terms, 'payment_issuer');
+      if (isDict(named)) {                            // fix inbox #192/#196: only the issuer the terms name pays the deal
+        if (pay === null && get(a, 'pay_with') !== null) {
+          throw new ValunError('terms_name_payment_issuer', `the agreed terms name ${shown(get(named, 'id'))} as the payment issuer: `
+            + "this deal is paid only by passing on that issuer's note, not with a note of your own; leave pay_with out, or set it to that issuer");
+        }
+        pay = pay ?? get(named, 'id');
+      }
+      if (pay !== null) {
+        snap.transfer = await this.#transferSnapshot(c, did, snap.checked, pay);
+        snap.not_settled = labels(true, net).not_settled;
+      }
     }
     return snap;
+  }
+
+  /**
+   * The directory entry of the participant an offer's pay_with names (valun_propose; valun_respond counter), or null for
+   * none ('own_note', or left out). The Python core's _offer_issuer.
+   */
+  async #offerIssuer(c, a) {
+    const pw = get(a, 'pay_with');
+    if (pw === null || (typeof pw === 'string' && lower(strip(pw)) === 'own_note')) return null;
+    if (typeof pw !== 'string' || !strip(pw) || cpLength(pw) > 64) {
+      throw new ValunError('bad_arguments', "pay_with is 'own_note' or the handle or id of the participant whose note the "
+        + 'payer will pass on; nothing was signed');
+    }
+    const other = await this.#resolve(c, pw);
+    if (!(isDict(other) && typeof get(other, 'id') === 'string' && other.id)) {
+      throw new ValunError('approval_unbound', 'the directory names no participant id');
+    }
+    return other;
   }
 
   /**
@@ -2655,6 +2722,11 @@ export class ValunAgent {
     if (problem) throw new ValunError('feature_unavailable', problem);
     const option = ValunAgent.#heldNote(await c.paymentOptions(did), payWith);
     const iid = option.issuer.id;
+    const named = isDict(chk.terms) ? get(chk.terms, 'payment_issuer') : null;
+    if (isDict(named) && get(named, 'id') !== iid) {               // fix inbox #192/#196
+      throw new ValunError('payment_issuer_mismatch', `the agreed terms name ${shown(get(named, 'id'))} as the payment issuer: `
+        + `this deal is paid only with that issuer's note, not ${shown(iid)}'s`);
+    }
     const issuer = await ValunAgent.#current(c, iid);
     const payee = await ValunAgent.#current(c, chk.other_id);
     const me = await c.me();
@@ -2791,6 +2863,7 @@ export class ValunAgent {
     };
     if (name === 'valun_respond' && ['accept', 'counter'].includes(get(a, 'action'))) {
       pin('expected_terms_hash', item(chk, 'terms_hash'), 'stale_terms', 'the offer changed after your agent read it');
+      if (get(a, 'action') === 'counter' && Object.hasOwn(snap, 'pay_with')) a.pay_with = snap.pay_with.id;   // exactly the issuer shown
     } else if (name === 'valun_review_delivery' && get(a, 'decision') === 'accept') {
       pin('expected_deliverable_sha256', item(chk, 'sha256'), 'stale_delivery', 'the delivery changed after your agent read it');
       pin('expected_terms_hash', item(chk, 'terms_hash'), 'stale_terms', 'the agreed terms are not the ones your agent read');
@@ -2802,6 +2875,7 @@ export class ValunAgent {
       }
     } else if (name === 'valun_propose' && Object.hasOwn(snap, 'counterparty')) {
       a.counterparty = snap.counterparty.id;          // the offer is signed for exactly the participant shown
+      if (Object.hasOwn(snap, 'pay_with')) a.pay_with = snap.pay_with.id;    // and names exactly the payment issuer shown
     } else if (name === 'valun_offer_guarantee' && Object.hasOwn(snap, 'issuer')) {
       a.issuer = snap.issuer.id;                      // exactly the participants shown
       a.creditor = snap.creditor.id;
@@ -2912,10 +2986,12 @@ export class ValunAgent {
     if (role !== 'payer' && role !== 'payee') throw new ValunError('bad_role', 'role must be payer or payee');
     const [price, due, ttl] = ValunAgent.#offerNumbers(a, u);     // exactly what propose() signs, or its refusal
     const who = shown(get(other, 'handle'));
+    const issuer = snap.pay_with ?? null, issuerShown = issuer !== null ? paymentIssuerShown(issuer, get(issuer, 'handle')) : null;
     return [
       `Valun - sign a NEW OFFER to ${who} (${shown(item(other, 'id'))}):`,
       `  you are the ${ROLE_WORDS[role]}; price: ${amountText(price, u)}`,
       `  deliver within ${due} h; the offer stays open ${ttl} h`,
+      ...(issuer !== null ? [`  payment issuer named in the terms: ${issuerShown}: ` + paymentIssuerWords(role, who, issuerShown)] : []),
       `If ${who} accepts, the deal is binding without asking you again: ` + owes(role, who, price, u, get(snap, 'circulating')),
       get(snap, 'not_settled', NOT_SETTLED),
       quoteLine('Offer text written by your agent', Object.fromEntries(TEXT_FIELDS.map(k => [k, get(a, k)])))].join('\n');
@@ -2962,6 +3038,8 @@ export class ValunAgent {
       `Valun - ACCEPT ${who}'s offer (${shown(chk.other_id)}, deal ${shown(t.deal_id)}, version ${shown(get(t, 'version'))}):`,
       `  you are the ${ROLE_WORDS[chk.role]}; price: ${amountText(price, u)}; deliver by ${shown(get(t, 'deliver_by'))}`,
       `  terms hash ${chk.terms_hash.slice(0, 16)}... (recomputed from these terms; your Valun client checks it again before signing)`,
+      ...(isDict(get(t, 'payment_issuer')) ? [`  payment issuer named in the terms: ${paymentIssuerShown(t.payment_issuer, issuerHandle(snap, t.payment_issuer))}: `
+        + paymentIssuerWords(chk.role, who, paymentIssuerShown(t.payment_issuer, issuerHandle(snap, t.payment_issuer)))] : []),
       'This makes the deal binding on both sides: ' + owes(chk.role, who, price, u, get(snap, 'circulating')),
       get(snap, 'not_settled', NOT_SETTLED),
       quoteLine(`Offer text written by ${who}`, Object.fromEntries(TEXT_FIELDS.map(k => [k, get(svc, k)])))].join('\n');
@@ -2990,10 +3068,33 @@ export class ValunAgent {
       '  deliver ' + (hours !== null ? `within ${hours} h of signing`
         : `by ${shown(get(t, 'deliver_by'))} as in their offer (rounded down to the hour, at least 1 h after signing)`),
       '  your agent changes: ' + (changes.join(', ') || 'nothing') + '; ' + stays,
+      ...ValunAgent.#counterIssuerLines(a, snap, chk, who),
       `If ${who} accepts it, the deal is binding without asking you again: ` + owes(chk.role, who, price, u, get(snap, 'circulating')),
       get(snap, 'not_settled', NOT_SETTLED),
       quoteLine(`Counter-offer text, with what your agent did not change copied from ${who}'s offer`,
         Object.fromEntries(TEXT_FIELDS.map(k => [k, truthy(get(a, k)) ? item(a, k) : get(svc, k)])))].join('\n');
+  }
+
+  /**
+   * The payment issuer a counter-offer's terms name (fix inbox #192/#196): the one pay_with names, none with 'own_note',
+   * else the one their offer names (Client.counter keeps it). The Python core's _counter_issuer_lines.
+   */
+  static #counterIssuerLines(a, snap, chk, who) {
+    const theirs = isDict(get(chk.terms, 'payment_issuer')) ? chk.terms.payment_issuer : null;
+    const mine = snap.pay_with ?? null;
+    const pw = get(a, 'pay_with'), dropped = typeof pw === 'string' && lower(strip(pw)) === 'own_note';
+    if (mine !== null) {
+      const x = paymentIssuerShown(mine, get(mine, 'handle'));
+      return [`  payment issuer named in the terms: ${x}: ` + paymentIssuerWords(chk.role, who, x)];
+    }
+    if (theirs !== null && !dropped) {
+      const x = paymentIssuerShown(theirs, issuerHandle(snap, theirs));
+      return [`  payment issuer named in the terms, as in their offer: ${x}: ` + paymentIssuerWords(chk.role, who, x)];
+    }
+    if (theirs !== null) {
+      return [`  your agent removes the payment issuer of their offer (${paymentIssuerShown(theirs, issuerHandle(snap, theirs))}): the payer pays with its own note`];
+    }
+    return [];
   }
 
   async #textReview(a, snap) {
@@ -3514,9 +3615,24 @@ export class ValunAgent {
    */
   async inbox() {
     const c = this.client();
-    const box = await c.inbox(), net = c.network ?? NETWORK;
-    if (!(isDict(box) && Array.isArray(get(box, 'recent_closed')))) return box;
-    return {...box, recent_closed: box.recent_closed.map(x => (closedSummary(x, net) ? {summary: closedSummary(x, net), ...x} : x))};
+    let box = await c.inbox();
+    const net = c.network ?? NETWORK;
+    if (isDict(box) && Array.isArray(get(box, 'recent_closed'))) {
+      box = {...box, recent_closed: box.recent_closed.map(x => (closedSummary(x, net) ? {summary: closedSummary(x, net), ...x} : x))};
+    }
+    if (isDict(box)) {                                // fix inbox #192/#196: a deal whose terms name a payment issuer, in words
+      for (const [k, rows] of Object.entries(box)) {
+        if (Array.isArray(rows) && rows.some(x => isDict(x) && isDict(get(x, 'payment_issuer')))) box = {...box, [k]: rows.map(x => ValunAgent.#issuerRow(x))};
+      }
+    }
+    return box;
+  }
+
+  static #issuerRow(x) {
+    const pi = isDict(x) ? get(x, 'payment_issuer') : null;
+    if (!isDict(pi)) return x;
+    const who = paymentIssuerShown(pi, get(pi, 'handle'));
+    return {...x, payment_issuer: {...pi, what_it_means: paymentIssuerWords(get(x, 'your_role'), shown(or(get(x, 'counterparty'), 'the other side')), who)}};
   }
 
   // ---------- guarantees (fix inbox #18) ----------
@@ -3754,6 +3870,15 @@ export class ValunAgent {
     const current = item(d, 'current');
     out.current_terms = truthy(current) ? {version: item(current, 'version'), by: item(current, 'by'), state: item(current, 'state'),
       terms: item(current, 'terms'), terms_hash: item(current, 'terms_hash')} : current;
+    const pi = get(or(get(or(current, {}), 'terms'), {}), 'payment_issuer');
+    if (isDict(pi)) {                                 // fix inbox #192/#196: whose note pays these terms, in words
+      const srv = isDict(get(d, 'payment_issuer')) ? d.payment_issuer : {};
+      const handle = get(srv, 'id') === get(pi, 'id') ? get(srv, 'handle') : null;
+      const x = paymentIssuerShown(pi, handle);
+      const cp = isDict(get(d, 'counterparty')) ? get(d.counterparty, 'handle') : null;
+      out.payment_issuer = {id: get(pi, 'id'), handle, pubkey: get(pi, 'pubkey'),
+        what_it_means: paymentIssuerWords(get(d, 'your_role'), shown(or(cp, 'the other side')), x)};
+    }
     if (get(d, 'status') === 'open' && truthy(get(d, 'current'))) {
       try {
         const chk = await c.verifyOffer(d);
@@ -3883,7 +4008,9 @@ export class ValunAgent {
         + 'end), then make the offer again.');
     }
     const counterpartyId = item(other, 'id');
-    const r = await c.propose({counterpartyId, role, title, description, deliverable, price, deliverByHours, offerTtlHours});
+    const issuer = await this.#offerIssuer(c, a);     // fix inbox #192/#196: the payment issuer, named in the terms
+    const r = await c.propose({counterpartyId, role, title, description, deliverable, price, deliverByHours, offerTtlHours,
+      ...(issuer !== null ? {payWith: issuer.id} : {})});
     const waiting = item(r, 'status') === 'proposed_awaiting_owner';
     const idle = recentlyActive(get(other, 'agent_last_seen'), 24, get(other, 'joined_at'), this.#now()) ? null
       : `${str(item(other, 'handle'))}'s agent has not been seen in the last 24 hours; it may never answer. Consider an active seller too.`;
@@ -3898,9 +4025,15 @@ export class ValunAgent {
       terms_hash: truthy(get(r, 'current')) ? item(item(r, 'current'), 'terms_hash') : null,
       what_happened: waiting ? heldText
         : `${handle} can now accept, decline or counter your signed offer.`,
-      if_agreed: role === 'payer'
-        ? `After you accept their delivery you issue them a note of ${shownPrice} (you will owe them; not settled).`
-        : `After they accept your delivery they issue you a note of ${shownPrice} (they will owe you; not settled).`,
+      if_agreed: issuer !== null
+        ? (role === 'payer'
+          ? `After you accept their delivery you pay them by passing on ${shownPrice} of ${str(item(issuer, 'handle'))}'s note `
+            + `(the terms name ${str(item(issuer, 'handle'))} as the payment issuer; no other note pays the deal).`
+          : `After they accept your delivery they pay you by passing on ${shownPrice} of ${str(item(issuer, 'handle'))}'s note `
+            + `(the terms name ${str(item(issuer, 'handle'))} as the payment issuer; no other note pays the deal).`)
+        : role === 'payer'
+          ? `After you accept their delivery you issue them a note of ${shownPrice} (you will owe them; not settled).`
+          : `After they accept your delivery they issue you a note of ${shownPrice} (they will owe you; not settled).`,
       ...(idle ? {warning: idle} : {}), ...wait};
   }
 
@@ -3920,8 +4053,11 @@ export class ValunAgent {
     } else if (act === 'counter') {
       const unit = c.unit ?? UNIT;
       const [price, hours, ttl] = ValunAgent.#counterNumbers(a, unit);   // refused before any read (fix inbox #22)
+      const issuer = await this.#offerIssuer(c, a);   // fix inbox #192/#196: null keeps theirs; 'own_note' none
+      const pw = get(a, 'pay_with'), dropped = typeof pw === 'string' && lower(strip(pw)) === 'own_note';
       r = await c.counter(did, {price, title: get(a, 'title'), description: get(a, 'description'),
-        deliverable: get(a, 'deliverable'), deliverByHours: hours, offerTtlHours: ttl, expectedTermsHash: get(a, 'expected_terms_hash')});
+        deliverable: get(a, 'deliverable'), deliverByHours: hours, offerTtlHours: ttl, expectedTermsHash: get(a, 'expected_terms_hash'),
+        ...(issuer !== null ? {payWith: issuer.id} : dropped ? {payWith: 'own_note'} : {})});
       at = price !== null ? ` at ${amountText(price, unit)}` : ' at the price of their offer';
     } else {
       throw new ValunError('bad_action', 'action must be accept, decline, counter or withdraw');
@@ -4007,8 +4143,17 @@ export class ValunAgent {
     }
     const issuer = ValunAgent.#payWith(a);
     if (issuer !== null) return this.#reviewPayWith(c, a, issuer);
-    const r = await c.complete(did, {expectedDeliverableSha256: get(a, 'expected_deliverable_sha256'),
-      expectedTermsHash: get(a, 'expected_terms_hash')});
+    let r;
+    try {
+      r = await c.complete(did, {expectedDeliverableSha256: get(a, 'expected_deliverable_sha256'),
+        expectedTermsHash: get(a, 'expected_terms_hash')});
+    } catch (e) {
+      // Fix inbox #192/#196: agreed terms that name a payment issuer are paid only with its note; with pay_with left out
+      // it is the one used (Client.complete refused before anything was signed). 'own_note' stays refused.
+      const named = e instanceof ValunError && e.code === 'terms_name_payment_issuer' ? get(or(e.extra, {}), 'payment_issuer') : null;
+      if (get(a, 'pay_with') === null && isDict(named) && typeof get(named, 'id') === 'string' && named.id) return this.#reviewPayWith(c, a, named.id);
+      throw e;
+    }
     const n = or(get(r, 'credit_note'), {});
     const status = item(r, 'status');
     let msg, wait = {};

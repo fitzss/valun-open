@@ -1105,6 +1105,28 @@ def owes(role, who, price, unit=vc.UNIT, circulating=False):
             else f'you must deliver; {who} would then owe you {p} (their note).')
 
 
+def payment_issuer_words(role, other, issuer):
+    """What terms that name a payment issuer mean (payment_issuer; fix inbox #192/#196), for the party in `role` (payer or
+    payee): `other` the other party and `issuer` the issuer, as shown."""
+    if role == 'payee':
+        return (f'{other} will pay by passing you a note issued by {issuer}, not a note of its own; no other note pays '
+                'these terms. Accepting them agrees to that; declining or countering refuses it')
+    return (f'you will pay {other} by passing on a note issued by {issuer} that you hold, not a note of your own; no '
+            'other note pays these terms')
+
+
+def payment_issuer_shown(pi, handle=None):
+    """A payment issuer {id, pubkey} as one computed value: 'handle (id)' when the handle is known, else the id."""
+    pid = pi.get('id') if isinstance(pi, dict) else None
+    return f'{shown(handle)} ({shown(pid)})' if isinstance(handle, str) and handle else shown(pid)
+
+
+def _issuer_handle(snap, pi):
+    """The handle the deal view names for payment issuer `pi` (its payment_issuer, when it is the same id), or None."""
+    srv = (snap.get('deal') or {}).get('payment_issuer') if isinstance(snap.get('deal'), dict) else None
+    return srv.get('handle') if isinstance(srv, dict) and isinstance(pi, dict) and srv.get('id') == pi.get('id') else None
+
+
 def tracker_words(network):
     """The tracker a credit note goes to, in an approval text."""
     return 'the Valun testnet tracker (anchored on Ergo testnet)' if network == TESTNET else 'the pilot tracker'
@@ -1264,6 +1286,8 @@ _SAID = {
     ('valun_status', 'brief'): 'brief must be true or false',
     ('valun_deliver', 'exact_result'): 'exact_result is true or false',
     ('valun_review_delivery', 'pay_with'): "pay_with is 'own_note' or the handle or id of an issuer whose note you hold",
+    **{(t, 'pay_with'): ("pay_with is 'own_note' or the handle or id of the participant whose note the payer will pass on; "
+                         'nothing was signed') for t in ('valun_propose', 'valun_respond')},
     ('valun_offer_guarantee', 'note'): 'note must be text',
     ('valun_respond_guarantee', 'reason'): 'reason must be text',
     ('valun_respond_guarantee', 'call_id'): 'call_id is malformed (vgc_ + 16 hex)',
@@ -2269,6 +2293,8 @@ class ValunAgent:
             self.tool_arguments(name, args)          # fix inbox #58: not a JSON object, a required argument missing, or one
             render = self._text_for(name, a)          # of the wrong type; before any read: a misspelt action has no text
             snap = self._snapshot(name, a)
+            if name == 'valun_review_delivery' and snap.get('transfer') is not None:
+                render = self._text_pay               # terms that name a payment issuer: paid with its note (#192/#196)
             if name in LIMIT_TOOLS and not loosens(snap['me'].get('agent_limits') or {}, limits_body(a)):
                 return {'args': a, 'text': None}      # this read shows nothing loosened: nothing to approve
             bound = self._bind_from(name, a, snap, strict=True)
@@ -2379,8 +2405,12 @@ class ValunAgent:
             if not (isinstance(other, dict) and isinstance(other.get('id'), str) and other['id']):
                 raise vc.ValunError('approval_unbound', 'the directory names no participant id')
             circulating = self._known_circulation(c)
-            return {'counterparty': other, 'circulating': circulating, 'not_settled': labels(circulating, net)['not_settled'],
+            snap = {'counterparty': other, 'circulating': circulating, 'not_settled': labels(circulating, net)['not_settled'],
                     'unit': unit, 'network': net}
+            issuer = self._offer_issuer(c, a)
+            if issuer is not None:
+                snap['pay_with'] = issuer
+            return snap
         if name == 'valun_set_limits':
             me = c.me()
             if not isinstance(me, dict):
@@ -2416,10 +2446,37 @@ class ValunAgent:
         snap = {'deal': d, 'checked': self._checked(d, did, c.participant_id, delivery=name == 'valun_review_delivery', unit=unit)}
         snap['circulating'] = self._known_circulation(c, d)      # read after the check, as before: what owes() says
         snap.update(not_settled=labels(snap['circulating'], net)['not_settled'], unit=unit, network=net)
-        if name == 'valun_review_delivery' and a.get('decision') == 'accept' and self._pay_with(a) is not None:
-            snap['transfer'] = self._transfer_snapshot(c, did, snap['checked'], self._pay_with(a))
-            snap['not_settled'] = labels(True, net)['not_settled']
+        if name == 'valun_respond' and a.get('action') == 'counter':
+            issuer = self._offer_issuer(c, a)
+            if issuer is not None:
+                snap['pay_with'] = issuer
+        if name == 'valun_review_delivery' and a.get('decision') == 'accept':
+            pay = self._pay_with(a)
+            named = snap['checked']['terms'].get('payment_issuer')
+            if isinstance(named, dict):             # fix inbox #192/#196: only the issuer the terms name pays the deal
+                if pay is None and a.get('pay_with') is not None:
+                    raise vc.ValunError('terms_name_payment_issuer', (
+                        f"the agreed terms name {shown(named.get('id'))} as the payment issuer: this deal is paid only by passing "
+                        "on that issuer's note, not with a note of your own; leave pay_with out, or set it to that issuer"))
+                pay = pay or named.get('id')
+            if pay is not None:
+                snap['transfer'] = self._transfer_snapshot(c, did, snap['checked'], pay)
+                snap['not_settled'] = labels(True, net)['not_settled']
         return snap
+
+    def _offer_issuer(self, c, a):
+        """The directory entry of the participant an offer's pay_with names (valun_propose; valun_respond counter), or
+        None for none ('own_note', or left out)."""
+        pw = a.get('pay_with')
+        if pw is None or (isinstance(pw, str) and pw.strip().lower() == 'own_note'):
+            return None
+        if not isinstance(pw, str) or not pw.strip() or len(pw) > 64:
+            raise vc.ValunError('bad_arguments', "pay_with is 'own_note' or the handle or id of the participant whose note the "
+                                                 'payer will pass on; nothing was signed')
+        other = self._resolve(c, pw)
+        if not (isinstance(other, dict) and isinstance(other.get('id'), str) and other['id']):
+            raise vc.ValunError('approval_unbound', 'the directory names no participant id')
+        return other
 
     def _transfer_snapshot(self, c, did, chk, pay_with):
         """What paying deal `did` with a held note would sign, read and checked once (see prepare): the server offers
@@ -2434,6 +2491,11 @@ class ValunAgent:
             raise vc.ValunError('feature_unavailable', problem)
         option = self._held_note(c.payment_options(did), pay_with)
         iid = option['issuer']['id']
+        named = chk['terms'].get('payment_issuer') if isinstance(chk.get('terms'), dict) else None
+        if isinstance(named, dict) and named.get('id') != iid:          # fix inbox #192/#196
+            raise vc.ValunError('payment_issuer_mismatch', (
+                f"the agreed terms name {shown(named.get('id'))} as the payment issuer: this deal is paid only with that "
+                f"issuer's note, not {shown(iid)}'s"))
         issuer = self._current(c, iid)
         payee = self._current(c, chk['other_id'])
         me = c.me()
@@ -2576,6 +2638,8 @@ class ValunAgent:
                 raise vc.ValunError(code, why)
         if name == 'valun_respond' and a.get('action') in ('accept', 'counter'):
             pin('expected_terms_hash', chk['terms_hash'], 'stale_terms', 'the offer changed after your agent read it')
+            if a.get('action') == 'counter' and 'pay_with' in snap:
+                a['pay_with'] = snap['pay_with']['id']          # the issuer is exactly the participant shown
         elif name == 'valun_review_delivery' and a.get('decision') == 'accept':
             pin('expected_deliverable_sha256', chk['sha256'], 'stale_delivery', 'the delivery changed after your agent read it')
             pin('expected_terms_hash', chk['terms_hash'], 'stale_terms', 'the agreed terms are not the ones your agent read')
@@ -2586,6 +2650,8 @@ class ValunAgent:
                 pin('expected_claim_total', tr['claim'], 'stale_claim', 'your claim on the issuer changed after your agent read it')
         elif name == 'valun_propose' and 'counterparty' in snap:
             a['counterparty'] = snap['counterparty']['id']     # the offer is signed for exactly the participant shown
+            if 'pay_with' in snap:
+                a['pay_with'] = snap['pay_with']['id']         # and names exactly the payment issuer shown
         elif name == 'valun_offer_guarantee' and 'issuer' in snap:
             a['issuer'], a['creditor'] = snap['issuer']['id'], snap['creditor']['id']   # exactly the participants shown
         elif name == 'valun_respond_guarantee' and a.get('action') in ('release', 'honor'):
@@ -2701,10 +2767,13 @@ class ValunAgent:
             raise vc.ValunError('bad_role', 'role must be payer or payee')
         price, due, ttl = ValunAgent._offer_numbers(a, u)      # exactly what propose() signs, or its refusal
         who = shown(other.get('handle'))
+        issuer = snap.get('pay_with')
         return '\n'.join([
             f"Valun - sign a NEW OFFER to {who} ({shown(other['id'])}):",
             f'  you are the {ROLE_WORDS[role]}; price: {vc.amount_text(price, u)}',
             f'  deliver within {due} h; the offer stays open {ttl} h',
+            *([f"  payment issuer named in the terms: {payment_issuer_shown(issuer, issuer.get('handle'))}: "
+               + payment_issuer_words(role, who, payment_issuer_shown(issuer, issuer.get('handle')))] if issuer else []),
             f'If {who} accepts, the deal is binding without asking you again: ' + owes(role, who, price, u, snap.get('circulating')),
             snap.get('not_settled', NOT_SETTLED),
             quote_line('Offer text written by your agent', {k: a.get(k) for k in ('title', 'description', 'deliverable')})])
@@ -2752,6 +2821,9 @@ class ValunAgent:
             f"Valun - ACCEPT {who}'s offer ({shown(chk['other_id'])}, deal {shown(t['deal_id'])}, version {shown(t.get('version'))}):",
             f"  you are the {ROLE_WORDS[chk['role']]}; price: {vc.amount_text(price, u)}; deliver by {shown(t.get('deliver_by'))}",
             f"  terms hash {chk['terms_hash'][:16]}... (recomputed from these terms; your Valun client checks it again before signing)",
+            *([f"  payment issuer named in the terms: {payment_issuer_shown(t['payment_issuer'], _issuer_handle(snap, t['payment_issuer']))}: "
+               + payment_issuer_words(chk['role'], who, payment_issuer_shown(t['payment_issuer'], _issuer_handle(snap, t['payment_issuer'])))]
+              if isinstance(t.get('payment_issuer'), dict) else []),
             'This makes the deal binding on both sides: ' + owes(chk['role'], who, price, u, snap.get('circulating')),
             snap.get('not_settled', NOT_SETTLED),
             quote_line(f'Offer text written by {who}', {k: svc.get(k) for k in ('title', 'description', 'deliverable')})])
@@ -2780,11 +2852,30 @@ class ValunAgent:
             '  deliver ' + (f'within {hours} h of signing' if hours is not None else
                             f"by {shown(t.get('deliver_by'))} as in their offer (rounded down to the hour, at least 1 h after signing)"),
             '  your agent changes: ' + (', '.join(changes) or 'nothing') + '; ' + stays,
+            *self._counter_issuer_lines(a, snap, chk, who),
             f'If {who} accepts it, the deal is binding without asking you again: ' + owes(chk['role'], who, price, u,
                                                                                        snap.get('circulating')),
             snap.get('not_settled', NOT_SETTLED),
             quote_line(f"Counter-offer text, with what your agent did not change copied from {who}'s offer",
                        {k: a[k] if a.get(k) else svc.get(k) for k in ('title', 'description', 'deliverable')})])
+
+    @staticmethod
+    def _counter_issuer_lines(a, snap, chk, who):
+        """The payment issuer a counter-offer's terms name (fix inbox #192/#196): the one pay_with names, none with
+        'own_note', else the one their offer names (Client.counter keeps it)."""
+        theirs = chk['terms'].get('payment_issuer') if isinstance(chk['terms'].get('payment_issuer'), dict) else None
+        mine = snap.get('pay_with')
+        dropped = isinstance(a.get('pay_with'), str) and a['pay_with'].strip().lower() == 'own_note'
+        if mine is not None:
+            x = payment_issuer_shown(mine, mine.get('handle'))
+            return [f'  payment issuer named in the terms: {x}: ' + payment_issuer_words(chk['role'], who, x)]
+        if theirs is not None and not dropped:
+            x = payment_issuer_shown(theirs, _issuer_handle(snap, theirs))
+            return [f'  payment issuer named in the terms, as in their offer: {x}: ' + payment_issuer_words(chk['role'], who, x)]
+        if theirs is not None:
+            return [f'  your agent removes the payment issuer of their offer ({payment_issuer_shown(theirs, _issuer_handle(snap, theirs))}): the payer pays '
+                    'with its own note']
+        return []
 
     def _text_review(self, a, snap):
         chk = snap['checked']
@@ -3284,7 +3375,19 @@ class ValunAgent:
         if isinstance(box, dict) and isinstance(box.get('recent_closed'), list):
             box = dict(box, recent_closed=[{'summary': closed_summary(x, net), **x} if closed_summary(x, net) else x
                                            for x in box['recent_closed']])
+        if isinstance(box, dict):                   # fix inbox #192/#196: a deal whose terms name a payment issuer, in words
+            for k, rows in list(box.items()):
+                if isinstance(rows, list) and any(isinstance(x, dict) and isinstance(x.get('payment_issuer'), dict) for x in rows):
+                    box[k] = [self._issuer_row(x) for x in rows]
         return box
+
+    @staticmethod
+    def _issuer_row(x):
+        pi = x.get('payment_issuer') if isinstance(x, dict) else None
+        if not isinstance(pi, dict):
+            return x
+        who = payment_issuer_shown(pi, pi.get('handle'))
+        return {**x, 'payment_issuer': {**pi, 'what_it_means': payment_issuer_words(x.get('your_role'), shown(x.get('counterparty') or 'the other side'), who)}}
 
     # ---------- guarantees (fix inbox #18) ----------
     @staticmethod
@@ -3507,6 +3610,14 @@ class ValunAgent:
             out['whose_turn'] = f'nobody: the deal is {st}'
         out['current_terms'] = d['current'] and {'version': d['current']['version'], 'by': d['current']['by'], 'state': d['current']['state'],
                                                  'terms': d['current']['terms'], 'terms_hash': d['current']['terms_hash']}
+        pi = ((d.get('current') or {}).get('terms') or {}).get('payment_issuer')
+        if isinstance(pi, dict):                    # fix inbox #192/#196: whose note pays these terms, in words
+            srv = d.get('payment_issuer') if isinstance(d.get('payment_issuer'), dict) else {}
+            handle = srv.get('handle') if srv.get('id') == pi.get('id') else None
+            x = payment_issuer_shown(pi, handle)
+            cp = (d.get('counterparty') or {}).get('handle') if isinstance(d.get('counterparty'), dict) else None
+            out['payment_issuer'] = {'id': pi.get('id'), 'handle': handle, 'pubkey': pi.get('pubkey'),
+                                     'what_it_means': payment_issuer_words(d.get('your_role'), shown(cp or 'the other side'), x)}
         if d.get('status') == 'open' and d.get('current'):
             try:
                 chk = c.verify_offer(d)
@@ -3621,7 +3732,9 @@ class ValunAgent:
                 f"Not signed. {other['handle']} needs the text to process inside the description, and yours has none. Put the "
                 'exact text in a ``` fenced block in the description (or as the only "quoted" string, or after TEXT: at the '
                 'end), then make the offer again.'))
-        r = c.propose(other['id'], role, title, description, deliverable, price, due, ttl)
+        issuer = self._offer_issuer(c, a)                   # fix inbox #192/#196: the payment issuer, named in the terms
+        r = c.propose(other['id'], role, title, description, deliverable, price, due, ttl,
+                      **({'pay_with': issuer['id']} if issuer else {}))
         waiting = r['status'] == 'proposed_awaiting_owner'
         idle = None if recently_active(other.get('agent_last_seen'), joined_at=other.get('joined_at')) else (
             f"{other['handle']}'s agent has not been seen in the last 24 hours; it may never answer. Consider an active seller too.")
@@ -3636,7 +3749,13 @@ class ValunAgent:
         return {'deal_id': r['id'], 'status': r['status'], 'terms_hash': r['current']['terms_hash'] if r.get('current') else None,
                 'what_happened': (held if waiting
                                   else f"{other['handle']} can now accept, decline or counter your signed offer."),
-                'if_agreed': (f"After you accept their delivery you issue them a note of {signed} (you will owe them; not settled)."
+                'if_agreed': ((f"After you accept their delivery you pay them by passing on {signed} of {issuer['handle']}'s note "
+                               f"(the terms name {issuer['handle']} as the payment issuer; no other note pays the deal)."
+                               if role == 'payer' else
+                               f"After they accept your delivery they pay you by passing on {signed} of {issuer['handle']}'s note "
+                               f"(the terms name {issuer['handle']} as the payment issuer; no other note pays the deal).")
+                              if issuer else
+                              f"After you accept their delivery you issue them a note of {signed} (you will owe them; not settled)."
                               if role == 'payer' else f"After they accept your delivery they issue you a note of {signed} (they will owe you; not settled)."),
                 **({'warning': idle} if idle else {}), **wait}
 
@@ -3655,8 +3774,11 @@ class ValunAgent:
         elif act == 'counter':
             unit = getattr(c, 'unit', vc.UNIT)
             price, hours, ttl = self._counter_numbers(a, unit)    # whole numbers, refused before any read (fix inbox #22)
+            issuer = self._offer_issuer(c, a)               # fix inbox #192/#196: None keeps theirs; 'own_note' none
+            dropped = isinstance(a.get('pay_with'), str) and a['pay_with'].strip().lower() == 'own_note'
             r = c.counter(did, price=price, title=a.get('title'), description=a.get('description'), deliverable=a.get('deliverable'),
-                          deliver_by_hours=hours, offer_ttl_hours=ttl, expected_terms_hash=a.get('expected_terms_hash'))
+                          deliver_by_hours=hours, offer_ttl_hours=ttl, expected_terms_hash=a.get('expected_terms_hash'),
+                          **({'pay_with': issuer['id']} if issuer else {'pay_with': 'own_note'} if dropped else {}))
             at = f' at {vc.amount_text(price, unit)}' if price is not None else ' at the price of their offer'
         else:
             raise vc.ValunError('bad_action', 'action must be accept, decline, counter or withdraw')
@@ -3738,7 +3860,15 @@ class ValunAgent:
         issuer = self._pay_with(a)
         if issuer is not None:
             return self._review_pay_with(c, a, issuer)
-        r = c.complete(did, a.get('expected_deliverable_sha256'), a.get('expected_terms_hash'))
+        try:
+            r = c.complete(did, a.get('expected_deliverable_sha256'), a.get('expected_terms_hash'))
+        except vc.ValunError as e:
+            # Fix inbox #192/#196: agreed terms that name a payment issuer are paid only with its note; with pay_with left
+            # out it is the one used (Client.complete refused before anything was signed). 'own_note' stays refused.
+            named = (e.extra or {}).get('payment_issuer') if e.code == 'terms_name_payment_issuer' else None
+            if a.get('pay_with') is None and isinstance(named, dict) and isinstance(named.get('id'), str) and named['id']:
+                return self._review_pay_with(c, a, named['id'])
+            raise
         n = r.get('credit_note') or {}
         wait = {}
         if r['status'] == 'completion_awaiting_owner':

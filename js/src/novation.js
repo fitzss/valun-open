@@ -82,6 +82,8 @@ export const REFUSAL_CODES = Object.freeze([
   'payment_attempt',
   // this module: a quote other than the approved one; an item that is not well formed
   'stale_quote', 'bad_template', 'bad_consent',
+  // fix inbox #192/#196: a payee consent through another issuer than the one the agreed terms name (payment_issuer)
+  'payment_issuer_mismatch',
   // tracker v3.2: the server does not report the contract this client signs prior acknowledgments for
   'feature_unavailable',
 ]);
@@ -345,11 +347,12 @@ export function payStatement(dealId, quoteDigestHex) {
 /**
  * ctx.deal from terms the caller has verified (Client.verifiedAgreement): their hash, the sha256 of the delivery it
  * checked (payer roles), and for the payee whether it delivered on the deal and the transfer the deal view says pays
- * it (deal.payment.transfer_id).
+ * it (deal.payment.transfer_id). Terms that name a payment issuer (fix inbox #192/#196) add payment_issuer {id,
+ * pubkey}; others are as before.
  */
 export function dealContext(terms, termsHash, deliverableSha256 = null, delivered = false, transferId = null) {
   const payer = item(terms, 'payer'), payee = item(terms, 'payee');
-  return {
+  const out = {
     deal_id: item(terms, 'deal_id'), network: item(terms, 'network'), tracker_nft_id: item(terms, 'tracker_nft_id'),
     denomination: item(terms, 'denomination'), terms_hash: termsHash, deliverable_sha256: deliverableSha256 ?? null,
     price: item(item(terms, 'price'), 'amount'),
@@ -357,6 +360,9 @@ export function dealContext(terms, termsHash, deliverableSha256 = null, delivere
     payee: {id: item(payee, 'id'), pubkey: item(payee, 'pubkey')},
     delivered: delivered === true, transfer_id: transferId ?? null,
   };
+  const pi = get(terms, 'payment_issuer');
+  if (isDict(pi)) out.payment_issuer = {id: get(pi, 'id'), pubkey: get(pi, 'pubkey')};
+  return out;
 }
 
 // ---------- D-1: payment attempts ----------
@@ -822,6 +828,21 @@ class Run {
     const cap = get(p, 'max_PC');
     if (cap !== null && (!nat(cap) || amount > cap)) {
       this.refuse('policy_cap', `${amount} ${this.unit} is above the cap your local consent policy sets for one consent`);
+    }
+  }
+
+  /**
+   * Fix inbox #192/#196: a payee consent for a deal whose agreed terms name a payment issuer (ctx.deal payment_issuer
+   * {id, pubkey}) is signed only for that issuer: its key as the terms name it, or the key this client itself resolved
+   * to its participant id (ctx.issuer_ids, after a key change); payment_issuer_mismatch otherwise. For that issuer the
+   * issuer lists of R8 are not checked: the payee agreed to it when it accepted the terms.
+   */
+  namedIssuer(named, issuerPk) {
+    const ids = get(this.ctx, 'issuer_ids');
+    const resolved = isDict(ids) ? get(ids, issuerPk) : null;
+    if (!(isDict(named) && (issuerPk === get(named, 'pubkey') || (text(resolved) && resolved === get(named, 'id'))))) {
+      this.refuse('payment_issuer_mismatch', "the agreed terms name another issuer than this transfer's: the deal is "
+        + 'paid only with the note of the issuer its terms name');
     }
   }
 
@@ -1325,7 +1346,8 @@ function payee(run, it, edges, context) {
   run.addEdge(e.edge, 'creditor', Y, e.new, T);
   const [p, m] = run.policy('as_new_creditor', 'accept_transfers');
   if (get(m, 'may_accept_credit') === false) run.refuse('policy_off', "your owner's mandate does not allow accepting credit");
-  run.issuerAccepted(p, m, e.I, or(e.issuer_id, idOf(get(context, 'issuer'))));
+  if (Object.hasOwn(deal, 'payment_issuer')) run.namedIssuer(deal.payment_issuer, e.I);     // fix inbox #192/#196
+  else run.issuerAccepted(p, m, e.I, or(e.issuer_id, idOf(get(context, 'issuer'))));
   run.cap(p, a);
   const cap = get(m, 'max_accept_per_issuer');
   if (cap !== null && (!nat(cap) || Y + a > cap)) {

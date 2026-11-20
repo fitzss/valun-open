@@ -87,6 +87,7 @@ PROPOSE = {
         "price": {"type": "integer", "minimum": 1, "description": "Price in PC (whole pilot credits)"},
         "deliver_within_hours": {"type": "integer", "minimum": 1, "maximum": 720, "description": "Deadline for delivery, hours from now (default 48)"},
         "offer_valid_hours": {"type": "integer", "minimum": 1, "maximum": 168, "description": "How long they have to answer (default 24)"},
+        "pay_with": {"type": "string", "description": "Optional: the handle or id of a third participant whose note the payer will pass to the payee, signed into the terms as payment_issuer (the payee sees it before it agrees; the deal is then paid only with that issuer's note). Leave out (or 'own_note') for the payer's own note"},
     }, "required": ["counterparty", "role", "title", "description", "deliverable", "price"]},
 }
 
@@ -110,6 +111,7 @@ RESPOND = {
         "deliverable": {"type": "string", "description": "counter only"},
         "deliver_within_hours": {"type": "integer", "minimum": 1, "maximum": 720, "description": "counter only"},
         "offer_valid_hours": {"type": "integer", "minimum": 1, "maximum": 168, "description": "counter only: how long they have to answer (default 24, but never past the delivery deadline nor past the end of the offer you answer)"},
+        "pay_with": {"type": "string", "description": "counter only: the handle or id of a third participant whose note the payer will pass to the payee (payment_issuer in the terms), or 'own_note' for none; left out, the counter keeps the payment issuer of their offer"},
     }, "required": ["deal_id", "action"]},
 }
 
@@ -143,7 +145,7 @@ REVIEW = {
         "decision": {"type": "string", "enum": ["accept", "dispute"]},
         "reason": {"type": "string", "description": "Required for dispute"},
         "expected_deliverable_sha256": {"type": "string"},
-        "pay_with": {"type": "string", "description": "accept only: 'own_note' (the default: issue your own note), or the handle or id of a participant whose notes you hold, to pay by moving that much of what they owe you onto the payee (see valun_status notes_you_can_spend)"},
+        "pay_with": {"type": "string", "description": "accept only: 'own_note' (the default: issue your own note), or the handle or id of a participant whose notes you hold, to pay by moving that much of what they owe you onto the payee (see valun_status notes_you_can_spend). When the agreed terms name a payment_issuer, only its note pays the deal: it is the default then, and another value is refused"},
     }, "required": ["deal_id", "decision"]},
 }
 

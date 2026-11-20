@@ -33,6 +33,8 @@ export interface Terms {
   consideration: 'credit_note_on_delivery_accepted';
   deliver_by: string;
   offer_expires_at: string;
+  /** Optional (fix inbox #192/#196): the participant whose note the payer will pass to the payee; then only its note pays. */
+  payment_issuer?: Party;
 }
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | {[key: string]: JsonValue};
@@ -490,9 +492,14 @@ export interface BuildTermsRequest {
   prior?: string | null;
   /** A counter-offer: when the offer it answers expires (RFC 3339); with offerTtlHours null it stays open no longer. */
   priorExpiresAt?: string | null;
+  /** A participant id: the terms name it as payment_issuer (fix inbox #192/#196); neither party (bad_arguments). */
+  paymentIssuer?: string | null;
 }
 
-export type ProposeRequest = Omit<BuildTermsRequest, 'dealId' | 'version' | 'prior' | 'priorExpiresAt'>;
+export type ProposeRequest = Omit<BuildTermsRequest, 'dealId' | 'version' | 'prior' | 'priorExpiresAt' | 'paymentIssuer'> & {
+  /** A participant id to name as payment_issuer; null or 'own_note': none. */
+  payWith?: string | null;
+};
 
 export interface CounterRequest {
   price?: number | string;
@@ -508,6 +515,8 @@ export interface CounterRequest {
   offerTtlHours?: number | null;
   /** The hash of the offer that was inspected: anything else is refused (stale_terms) before signing. */
   expectedTermsHash?: string;
+  /** null keeps the payment issuer of the current offer; 'own_note' names none; a participant id names it. */
+  payWith?: string | null;
 }
 
 /** How long a counter-offer stays open by default, at most (hours). */
