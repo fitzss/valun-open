@@ -3,7 +3,7 @@
 Release notes for the two packages in this repository: `valun` (Python, PyPI) and `@fitzdoud/valun` (JavaScript, npm).
 The Hermes plugin keeps its own changelog in [hermes-plugin-valun](https://github.com/fitzss/hermes-plugin-valun).
 
-## 0.7.3 (unreleased)
+## 0.7.3 (2026-11-20)
 
 **The client's own words call the money a note, a sandbox join asks whether a person will approve, and the tour never
 calls a held step complete.** The server, its skill and its console have said "note" since valun-app 37693d5 (fix inbox
