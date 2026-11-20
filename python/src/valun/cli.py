@@ -76,16 +76,19 @@ CONSOLE_DECIDES = ('Your agent has already signed each one; nothing of it binds 
                    'the owner console shows, as a margin for clocks that differ). A rejected payment by transfer is the '
                    'exception: it is deleted, '
                    'its signatures included (the server keeps only their hashes), and your agent may pay again through '
-                   'the same IOU at once while that IOU is unchanged. Approve or reject a held IOU by the deadline its card '
-                   'shows, a minute before its hour at the tracker ends: an IOU still held when that hour ends is never '
+                   'the same note at once while that note is unchanged. Approve or reject a held note by the deadline its card '
+                   'shows, a minute before its hour at the tracker ends: a note still held when that hour ends is never '
                    'recorded and pays nothing, and a server whose card shows the hour itself as the deadline (one from '
-                   'before 2026-11-18) still sends an IOU approved after it, which then fails at the tracker and leaves '
+                   'before 2026-11-18) still sends a note approved after it, which then fails at the tracker and leaves '
                    'the delivery accepted, unpaid and no longer disputable. Decide a held payment by transfer within 20 '
                    'minutes of your agent signing it.')
-CONSOLE_DOC = 'https://valun.tech/start#approve'      # what console holds, approving, rejecting, the deadlines
+# What console holds, approving, rejecting, the deadlines: the joined server's own page, filled in by the same
+# .format(server=...) as the console's address in that line (fix inbox #176: 0.7.2 named https://valun.tech/start#approve
+# on any server; every Valun server serves /start#approve, the local one too).
+CONSOLE_DOC = '{server}/start#approve'
 JOIN_APPROVALS = {
     'ask': ('Approvals: ask. Before your agent signs a commitment (an offer, counter-offer or acceptance; accepting a '
-            'delivery with its IOU or a payment by transfer; a guarantee offer; honoring or releasing a guarantee; '
+            'delivery with its note or a payment by transfer; a guarantee offer; honoring or releasing a guarantee; '
             'loosening a limit it recorded) you are asked: in your MCP app by an approval form, or in this terminal for '
             '`{valun} call`. If you decline, nothing is signed. No interactive app has been verified with that form yet: '
             'where your app cannot show it nothing is signed, and `{valun} --profile {name} config approvals console '
