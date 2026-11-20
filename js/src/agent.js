@@ -221,10 +221,30 @@ export const TOUR_TEXTS = Object.freeze({1: 'Valun sandbox tour, step 1: my firs
   3: 'Valun sandbox tour, step 3: paid with my own note.',
   4: 'Valun sandbox tour, step 4: I sell my work.',
   5: 'Valun sandbox tour, step 5: paid with a note I hold again.'});
-/** TOUR_GOALS[step] in a network's unit: its prices and cycle amounts are PC-sized (times the scale). */
+/** A step that is neither 1 to 5 nor 'done' (fix inbox #175: 0.7.2 called every other step complete, a held one included). */
+export const TOUR_NO_STEP = 'No tour step to take now: then says what waits.';
+/**
+ * TOUR_GOALS[step] in a network's unit: its prices and cycle amounts are PC-sized (times the scale). Only 'done' is
+ * complete; any other step that is not 1 to 5 has TOUR_NO_STEP (fix inbox #175).
+ */
 export function tourGoal(step, unit = UNIT, scale = 1) {
-  const goal = whole(step) && Object.hasOwn(TOUR_GOALS, step) ? TOUR_GOALS[step] : 'The tour is complete.';
+  const goal = step === 'done' ? 'The tour is complete.'
+    : whole(step) && Object.hasOwn(TOUR_GOALS, step) ? TOUR_GOALS[step] : TOUR_NO_STEP;
   return unit === 'PC' ? goal : goal.replace(/\b(\d+) PC\b/g, (_m, n) => amountText(Number(n) * scale, unit));
+}
+/**
+ * The tour step what a participant holds (hx from sandbox-exact, hm from sandbox-mallory) and owes (ox to sandbox-exact)
+ * gives, with how many deals it paid by transfer and what set-offs cleared: the holdings' rules of sandboxNextSteps,
+ * without their reads and side effects. 'done' once a payment by transfer and a set-off happened and nothing is left to
+ * do (fix inbox #175: the step a commitment held for the owner keeps). As the Python agent's tour_step_from.
+ */
+export function tourStepFrom(hx, hm, ox, paidByTransfer, cleared, notary) {
+  if ((hx > 0 || hm > 0) && ox > 0) return hx > 0 ? 3 : 4;
+  if (hm >= notary) return 5;
+  if (hx >= notary && paidByTransfer === 0) return 2;
+  if (hx > 0) return 3;
+  if (ox > 0) return 4;
+  return paidByTransfer > 0 && cleared > 0 ? 'done' : 1;
 }
 /** What you hold / owe (PC-sized, times the scale) once each step is done, as tracker totals (design 9.2). */
 export const TOUR_AFTER = Object.freeze({1: Object.freeze([3, 0]), 2: Object.freeze([1, 0]), 3: Object.freeze([0, 1]),
@@ -310,7 +330,7 @@ export function briefStatus(out) {
   if (truthy(get(out, 'guarantees_waiting'))) b.guarantees_waiting = out.guarantees_waiting;
   const step = get(out, 'sandbox_next_steps');
   if (isDict(step)) {
-    b.sandbox_next_steps = Object.fromEntries(['tour_step', 'next_calls', 'then', 'blocked', 'retry_after_seconds']
+    b.sandbox_next_steps = Object.fromEntries(['tour_step', 'next_calls', 'then', 'blocked', 'retry_after_seconds', 'waiting_for_your_owner']
       .filter(k => k in step).map(k => [k, step[k]]));
   }
   b.note = get(out, 'network') === TESTNET ? BRIEF_NOTE_TESTNET : BRIEF_NOTE;
@@ -3176,23 +3196,37 @@ export class ValunAgent {
       return plan(step, [call('valun_propose', args, why)], `${cp} answers within a few seconds; call valun_status again for the next step.`);
     };
     const wait = 'The sandbox agents act within a few seconds: call valun_status again.';
+    const deals = isDict(get(pos, 'deals')) ? pos.deals : {};
+    const count = bucket => (whole(get(deals, bucket)) && deals[bucket] > 0 ? deals[bucket] : 0);
+    const paidByTransfer = count('paid_by_transfer');
+    let cleared = get(pos, 'cleared_by_setoff', get(pos, 'settled', 0));
+    cleared = whole(cleared) && cleared > 0 ? cleared : 0;
     if (listed.awaiting_your_owner.length) {
       const x = listed.awaiting_your_owner[0];
       const [where] = ownerWait(c, {approvals: [{id: get(x, 'approval_id'), state: 'pending'}]}, get(x, 'deal_id'),
         this.consoleCommand);
-      // A held IOU names the console's deadline for it, and once the tracker's hour has passed, that the owner must
+      // A held note names the console's deadline for it, and once the tracker's hour has passed, that the owner must
       // reject it (the 0.7.2 review).
       const [by, exp, passed] = heldNoteOf(c, x, typeof c.nowMs === 'function' ? c.nowMs() : this.#now());
-      if (passed) {
-        return plan(null, [], `The IOU you signed for deal ${shown(get(x, 'deal_id'))} still waits for your `
+      const then = passed
+        ? `The note you signed for deal ${shown(get(x, 'deal_id'))} still waits for your `
           + `owner${where}, but the tracker records it only until ${exp}, which has passed: tell `
           + 'your owner to reject it there (approved now, it would fail at the tracker and leave '
           + 'the delivery accepted, unpaid and no longer disputable), then call valun_status '
-          + 'again: the next step pays the deal again.', OWNER_RETRY_S);
-      }
-      return plan(null, [], `Your owner must first approve a commitment${where}`
-        + (exp ? ` (an IOU: by ${deadlineWords(by, exp)})` : '')
-        + '; tell them, then call valun_status again.', OWNER_RETRY_S);
+          + 'again: the next step pays the deal again.'
+        : `Your owner must first approve a commitment${where}`
+          + (exp ? ` (a note: by ${deadlineWords(by, exp)})` : '')
+          + '; tell them, then call valun_status again.';
+      // Fix inbox #175: the step in hand, from the holdings, and that it waits; never "complete" (0.7.2 said so for a
+      // participant whose first two steps were held, holding and owing nothing).
+      const step = tourStepFrom(hx, hm, ox, paidByTransfer, cleared, notary);
+      const p = plan(step === 'done' ? 5 : step, [], then, OWNER_RETRY_S);
+      const what = truthy(get(x, 'approval_id'))
+        ? `approval ${shown(x.approval_id)}` + (truthy(get(x, 'deal_id')) ? ` (deal ${shown(x.deal_id)})` : '')
+        : 'a commitment of yours';
+      p.goal = `Waiting for your owner: ${what} is held for them in the owner console. Then: ` + p.goal;
+      p.waiting_for_your_owner = Object.fromEntries(['approval_id', 'deal_id', 'kind'].filter(k => get(x, k) !== null).map(k => [k, x[k]]));
+      return p;
     }
     for (const x of listed.review_delivery) {
       const did = get(x, 'deal_id'), cp = get(x, 'counterparty');
@@ -3251,8 +3285,6 @@ export class ValunAgent {
       const x = listed.waiting_on_others[0];
       return plan(stepOf(get(x, 'counterparty'), get(x, 'your_role')), [], wait);
     }
-    const deals = isDict(get(pos, 'deals')) ? pos.deals : {};
-    const count = bucket => (whole(get(deals, bucket)) && deals[bucket] > 0 ? deals[bucket] : 0);
     // A deal agreed and not yet paid (position bucket agreed_note_not_issued) that no inbox list above shows: its credit
     // note is being recorded (the inbox lists issuing_note in no section, nor note_failed for the payee), or it was paid
     // between the GET /me these holdings come from and the GET /inbox read after it. Either way its note is not in the
@@ -3281,9 +3313,7 @@ export class ValunAgent {
       return plan(hx > 0 ? 3 : 4, [], 'A set-off of the cycle is due: your Valun client signs it by itself at its '
         + 'next consent run (within about a minute). Call valun_status again.', SETOFF_DUE_RETRY_S);
     }
-    const paidByTransfer = count('paid_by_transfer');
-    let cleared = get(pos, 'cleared_by_setoff', get(pos, 'settled', 0));
-    cleared = whole(cleared) && cleared > 0 ? cleared : 0;
+    // The holdings' rules (tourStepFrom says the same, without these reads and side effects)
     if (hm >= notary) return offer(5, SANDBOX_EXACT, 'payer', 'notary');
     if (hx >= notary && paidByTransfer === 0) return offer(2, SANDBOX_MALLORY, 'payer', 'notary');
     if (hx > 0) return offer(3, SANDBOX_EXACT, 'payer', 'notary');   // once step 2 paid by transfer: pay sandbox-exact with your own note

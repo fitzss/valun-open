@@ -219,10 +219,33 @@ TOUR_TEXTS = {1: 'Valun sandbox tour, step 1: my first paid job.',
               5: 'Valun sandbox tour, step 5: paid with a note I hold again.'}
 
 
+# A step that is neither 1 to 5 nor 'done' (fix inbox #175: 0.7.2 called every other step complete, a held one included).
+TOUR_NO_STEP = 'No tour step to take now: then says what waits.'
+
+
 def tour_goal(step, unit=vc.UNIT, scale=1):
-    """TOUR_GOALS[step] in a network's unit: its prices and cycle amounts are PC-sized (times the scale)."""
-    goal = TOUR_GOALS.get(step, 'The tour is complete.')
+    """TOUR_GOALS[step] in a network's unit: its prices and cycle amounts are PC-sized (times the scale). Only 'done'
+    is complete; any other step that is not 1 to 5 has TOUR_NO_STEP (fix inbox #175)."""
+    goal = 'The tour is complete.' if step == 'done' else TOUR_GOALS.get(step, TOUR_NO_STEP)
     return goal if unit == 'PC' else re.sub(r'\b(\d+) PC\b', lambda m: vc.amount_text(int(m.group(1)) * scale, unit), goal)
+
+
+def tour_step_from(hx, hm, ox, paid_by_transfer, cleared, notary):
+    """The tour step what a participant holds (hx from sandbox-exact, hm from sandbox-mallory) and owes (ox to
+    sandbox-exact) gives, with how many deals it paid by transfer and what set-offs cleared: the holdings' rules of
+    ValunAgent._sandbox_next_steps, without their reads and side effects. 'done' once a payment by transfer and a set-off
+    happened and nothing is left to do (fix inbox #175: the step a commitment held for the owner keeps)."""
+    if (hx > 0 or hm > 0) and ox > 0:
+        return 3 if hx > 0 else 4
+    if hm >= notary:
+        return 5
+    if hx >= notary and paid_by_transfer == 0:
+        return 2
+    if hx > 0:
+        return 3
+    if ox > 0:
+        return 4
+    return 'done' if paid_by_transfer > 0 and cleared > 0 else 1
 
 
 # What you hold / owe (PC-sized, times the scale) once each step is done, as tracker totals (design 9.2).
@@ -334,7 +357,7 @@ def brief_status(out):
         b['guarantees_waiting'] = out['guarantees_waiting']
     step = out.get('sandbox_next_steps')
     if isinstance(step, dict):
-        keys = ('tour_step', 'next_calls', 'then', 'blocked', 'retry_after_seconds')
+        keys = ('tour_step', 'next_calls', 'then', 'blocked', 'retry_after_seconds', 'waiting_for_your_owner')
         b['sandbox_next_steps'] = {k: step[k] for k in keys if k in step}
     b['note'] = BRIEF_NOTE_TESTNET if out.get('network') == TESTNET else BRIEF_NOTE
     return b
@@ -2957,6 +2980,14 @@ class ValunAgent:
             return plan(step, [call('valun_propose', args, why)],
                         f'{cp} answers within a few seconds; call valun_status again for the next step.')
         wait = 'The sandbox agents act within a few seconds: call valun_status again.'
+        notary = sandbox.price_of('notary', getattr(c, 'network', None))
+        deals = pos.get('deals') if isinstance(pos.get('deals'), dict) else {}
+
+        def count(bucket):
+            return deals[bucket] if _whole(deals.get(bucket)) and deals[bucket] > 0 else 0
+        paid_by_transfer = count('paid_by_transfer')
+        cleared = pos.get('cleared_by_setoff', pos.get('settled', 0))
+        cleared = cleared if _whole(cleared) and cleared > 0 else 0
         if listed['awaiting_your_owner']:
             x = listed['awaiting_your_owner'][0]
             where, _wait = owner_wait(c, {'approvals': [{'id': x.get('approval_id'), 'state': 'pending'}]}, x.get('deal_id'),
@@ -2966,14 +2997,24 @@ class ValunAgent:
             # longer disputable).
             by, exp, passed = held_note_of(c, x, int(vc.time.time() * 1000))
             if passed:
-                return plan(None, [], f'The IOU you signed for deal {shown(x.get("deal_id"))} still waits for your '
-                                      f'owner{where}, but the tracker records it only until {exp}, which has passed: tell '
-                                      'your owner to reject it there (approved now, it would fail at the tracker and leave '
-                                      'the delivery accepted, unpaid and no longer disputable), then call valun_status '
-                                      'again: the next step pays the deal again.', OWNER_RETRY_S)
-            return plan(None, [], f'Your owner must first approve a commitment{where}'
-                                  + (f' (an IOU: by {_deadline_words(by, exp)})' if exp else '')
-                                  + '; tell them, then call valun_status again.', OWNER_RETRY_S)
+                then = (f'The note you signed for deal {shown(x.get("deal_id"))} still waits for your '
+                        f'owner{where}, but the tracker records it only until {exp}, which has passed: tell '
+                        'your owner to reject it there (approved now, it would fail at the tracker and leave '
+                        'the delivery accepted, unpaid and no longer disputable), then call valun_status '
+                        'again: the next step pays the deal again.')
+            else:
+                then = (f'Your owner must first approve a commitment{where}'
+                        + (f' (a note: by {_deadline_words(by, exp)})' if exp else '')
+                        + '; tell them, then call valun_status again.')
+            # Fix inbox #175: the step in hand, from the holdings, and that it waits; never "complete" (0.7.2 said so
+            # for a participant whose first two steps were held, holding and owing nothing).
+            step = tour_step_from(hx, hm, ox, paid_by_transfer, cleared, notary)
+            p = plan(5 if step == 'done' else step, [], then, OWNER_RETRY_S)
+            what = ((f"approval {shown(x['approval_id'])}" + (f" (deal {shown(x['deal_id'])})" if x.get('deal_id') else ''))
+                    if x.get('approval_id') else 'a commitment of yours')
+            p['goal'] = f'Waiting for your owner: {what} is held for them in the owner console. Then: ' + p['goal']
+            p['waiting_for_your_owner'] = {k: x.get(k) for k in ('approval_id', 'deal_id', 'kind') if x.get(k) is not None}
+            return p
         for x in listed['review_delivery']:
             did, cp = x.get('deal_id'), x.get('counterparty')
             step = step_of(cp, 'payer')
@@ -3023,10 +3064,6 @@ class ValunAgent:
         if listed['waiting_on_others']:
             x = listed['waiting_on_others'][0]
             return plan(step_of(x.get('counterparty'), x.get('your_role')), [], wait)
-        deals = pos.get('deals') if isinstance(pos.get('deals'), dict) else {}
-
-        def count(bucket):
-            return deals[bucket] if _whole(deals.get(bucket)) and deals[bucket] > 0 else 0
         # A deal agreed and not yet paid (position bucket agreed_note_not_issued) that no inbox list above shows: its
         # credit note is being recorded (the inbox lists issuing_note in no section, nor note_failed for the payee), or
         # it was paid between the GET /me these holdings come from and the GET /inbox read after it. Either way its note
@@ -3053,10 +3090,7 @@ class ValunAgent:
             return plan(3 if hx > 0 else 4, [], ('A set-off of the cycle is due: your Valun client signs it by itself at its '
                                                  'next consent run (within about a minute). Call valun_status again.'),
                         SETOFF_DUE_RETRY_S)
-        notary = sandbox.price_of('notary', getattr(c, 'network', None))
-        paid_by_transfer = count('paid_by_transfer')
-        cleared = pos.get('cleared_by_setoff', pos.get('settled', 0))
-        cleared = cleared if _whole(cleared) and cleared > 0 else 0
+        # The holdings' rules (tour_step_from says the same, without these reads and side effects)
         if hm >= notary:
             return offer(5, SANDBOX_EXACT, 'payer', 'notary')
         if hx >= notary and paid_by_transfer == 0:

@@ -1898,10 +1898,15 @@ class TourOwnerWaits(unittest.TestCase):
         calls = [{'tool': tool, 'why': tool, 'arguments': {}}] if tool else []
         return {'tour_step': step, 'of': 5, 'goal': f'goal {step}', 'then': then, 'next_calls': calls}
 
+    def held(self, step):
+        """0.7.3's owner-wait plan (fix inbox #175): the step in hand, and what waits for the owner."""
+        return dict(self.plan(step, then=self.WHERE), goal=f'Waiting for your owner: ... Then: goal {step}',
+                    waiting_for_your_owner={'approval_id': 'va_0123456789ab', 'deal_id': 'vd_0123456789abcdef',
+                                            'kind': 'propose'})
+
     def test_a_step_waiting_for_the_owner_is_not_done(self):
-        owner = self.plan(None, then=self.WHERE)
-        ag = OwnerWaitTourAgent([self.plan(1, 'valun_propose'), owner, owner, self.plan(1, 'valun_deliver'), self.plan(1),
-                                 self.plan(2, 'valun_propose'), owner, self.plan(2, 'valun_review_delivery'),
+        ag = OwnerWaitTourAgent([self.plan(1, 'valun_propose'), self.held(1), self.held(1), self.plan(1, 'valun_deliver'),
+                                 self.plan(1), self.plan(2, 'valun_propose'), self.held(2), self.plan(2, 'valun_review_delivery'),
                                  self.plan('done', then='The tour is complete.')])
         lines = []
         r = sb.tour(None, yes=True, log=lines.append, agent=ag, poll_s=3)
@@ -1937,9 +1942,10 @@ class TourOwnerWaits(unittest.TestCase):
         self.assertEqual(r['steps'][-1]['tracker_totals'], {f"{'03' + '22' * 7}... -> you": 0})
 
     def test_a_tour_that_starts_while_the_owner_decides_names_no_step_done(self):
-        # an earlier run's offer still waits for the owner; a step that goes back (a deal ended) is not done either
-        owner = self.plan(None, then=self.WHERE)
-        ag = OwnerWaitTourAgent([owner, self.plan(3, 'valun_propose'), self.plan(2, 'valun_propose'), self.plan(3),
+        # an earlier run's offer still waits for the owner; a step that goes back (a deal ended) is not done either. The
+        # owner-wait plan names the step in hand since 0.7.3 (here 4, ahead of the step the tour then takes): it is
+        # announced only once the owner decided
+        ag = OwnerWaitTourAgent([self.held(4), self.plan(3, 'valun_propose'), self.plan(2, 'valun_propose'), self.plan(3),
                                  self.plan(4, 'valun_propose'), self.plan('done', then='The tour is complete.')])
         lines = []
         r = sb.tour(None, yes=True, log=lines.append, agent=ag, poll_s=3)

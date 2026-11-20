@@ -2019,7 +2019,7 @@ def client_helpers():
             'client_signs_testnet': [[x[2], va.client_signs(x[2], 'nanoERG')] for x in in_force],
             'amount_text': [[n, u, vc.amount_text(n, u)] for u in ('PC', 'nanoERG')
                             for n in (0, 1, 3, -2_000_000, 3_000_000, 999_999_999, 1_000_000_000, 1_500_000_000, 123_456_789_012, '7')],
-            'tour_goal': [[s, u, k, va.tour_goal(s, u, k)] for s in (1, 2, 3, 4, 5, None) for u, k in (('PC', 1), ('nanoERG', 1_000_000))],
+            'tour_goal': [[s, u, k, va.tour_goal(s, u, k)] for s in (1, 2, 3, 4, 5, None, 'done') for u, k in (('PC', 1), ('nanoERG', 1_000_000))],
             # 0.7.2: with circulating credit a payer's words promise no credit note (it may pay with notes it holds)
             'owes': [[r, u, n, c_, va.owes(r, 'bob', n, u, c_)] for r in ('payer', 'payee') for u, n in (('PC', 3), ('nanoERG', 3_000_000))
                      for c_ in (False, True, None, 1)],

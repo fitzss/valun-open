@@ -715,8 +715,10 @@ def tour(store, server=None, yes=False, ask=None, log=print, poll_s=TOUR_POLL_S,
         nxt = st.get('sandbox_next_steps')
         if not isinstance(nxt, dict):
             raise vc.ValunError('feature_unavailable', 'valun_status shows no sandbox_next_steps for this participant')
-        step = nxt.get('tour_step')
-        if step is not None and step != current:     # None: the owner decides; the step in hand goes on
+        # None, or a plan that waits for the owner (waiting_for_your_owner, fix inbox #175): the owner decides; the step
+        # in hand goes on
+        step = None if nxt.get('waiting_for_your_owner') else nxt.get('tour_step')
+        if step is not None and step != current:
             if isinstance(top, int) and (step == 'done' or (isinstance(step, int) and step > top)):
                 try:
                     totals = edge_totals(c)

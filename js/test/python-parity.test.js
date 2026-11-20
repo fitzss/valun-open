@@ -346,8 +346,10 @@ test('circulation helpers: consentRoles, the capability header, the consent poli
   for (const [n, u, out] of H.amount_text) assert.equal(api.amountText(n, u), out, `${n} ${u}`);
   for (const [s, u, k, out] of H.tour_goal) assert.equal(api.tourGoal(s, u, k), out, `${s} ${u}`);
   for (const [r, u, n, circulating, out] of H.owes) assert.equal(api.owes(r, 'bob', n, u, circulating), out, `${r} ${u} ${circulating}`);
-  assert.ok(H.owes.some(([r, , , circulating, out]) => r === 'payer' && circulating === true && !out.includes('(your credit note)')),
-    'with circulating credit the payer is promised no credit note');
+  assert.ok(H.owes.some(([r, , , circulating, out]) => r === 'payer' && circulating === true && !out.includes('(your note)')),
+    'with circulating credit the payer is promised no own-note-only payment');
   for (const [n, out] of H.tracker_words) assert.equal(api.trackerWords(n), out, String(n));
-  assert.ok(H.labels_testnet.length === 2 && H.amount_text.length === 20 && H.tour_goal.length === 12, 'the testnet cases are recorded');
+  assert.ok(H.labels_testnet.length === 2 && H.amount_text.length === 20 && H.tour_goal.length === 14, 'the testnet cases are recorded');
+  // fix inbox #175: only 'done' is complete, never a plan with no step
+  assert.ok(H.tour_goal.every(([s, , , out]) => (out === 'The tour is complete.') === (s === 'done')), 'complete only when done');
 });

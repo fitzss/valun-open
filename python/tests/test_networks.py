@@ -235,6 +235,9 @@ class TestnetWording(unittest.TestCase):
                                'Valun client signs by itself.')
         self.assertEqual(va.tour_goal(3), va.TOUR_GOALS[3], 'the pilot: as before')
         self.assertEqual(va.tour_goal('done', 'nanoERG', 1_000_000), 'The tour is complete.')
+        # fix inbox #175: only 'done' is complete; no other step (None: a plan with no step) ever says so
+        for step in (None, 0, 6, 'x'):
+            self.assertEqual(va.tour_goal(step, 'nanoERG', 1_000_000), va.TOUR_NO_STEP, step)
         snap = {'counterparty': {'id': 'vp_' + 'f' * 12, 'handle': 'sandbox-exact'}, 'unit': 'nanoERG', 'network': 'valun-testnet-1',
                 'not_settled': va.labels(True, 'valun-testnet-1')['not_settled']}
         text = va.ValunAgent._text_propose({'role': 'payer', 'price': 3_000_000, 'title': 't', 'description': 'd', 'deliverable': 'x'}, snap)
