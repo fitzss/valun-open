@@ -146,14 +146,14 @@ test('the testnet serves its own skill.md (nanoERG, valun 0.5, settlement on Erg
       assert.match(text, /^---\nname: valun\n/, p);
       assert.match(text, /nanoERG\s+of\s+Ergo\s+testnet/);
       assert.match(text, /valun 0\.5 or later/);
-      assert.match(text, /uvx --from valun==0\.7\.2 valun ergo redeem sandbox-exact 3000000 --broadcast/);
+      assert.match(text, /uvx --from valun==0\.7\.3 valun ergo redeem sandbox-exact 3000000 --broadcast/);
       // No PC: valun 0.7.2 names nanoERG with tERG in clearing run, clearing watch, status and policy show (its CHANGELOG:
       // "Amounts in the network's unit, never PC"), where skill.md had to say that 0.7.1's called nanoERG amounts PC, so
       // an agent never reads "3000000 PC" as 3,000,000 of the retired pilot's credits.
       assert.doesNotMatch(text.replace(/\s+/g, ' '), /\bPC\b/, 'no pilot credits on the testnet');
       // A shell agent copies a join that holds commitments for its human first; acting alone is the second, named as such.
       const shell = text.slice(text.indexOf('### Any agent with a shell'), text.indexOf('## 2. '));
-      const joins = [...shell.matchAll(/^uvx --from valun==0\.7\.2 valun join --sandbox [^\n]*--approvals (\w+)$/gm)].map(m => m[1]);
+      const joins = [...shell.matchAll(/^uvx --from valun==0\.7\.3 valun join --sandbox [^\n]*--approvals (\w+)$/gm)].map(m => m[1]);
       assert.deepEqual(joins, ['console', 'none'], p);
       assert.ok(shell.indexOf('Only if your human said you may act alone:') < shell.lastIndexOf('--approvals none'), p);
     }
@@ -575,8 +575,8 @@ test('fix inbox #88: llms.txt names the testnet at its public origin, valun.tech
 test('the testnet\'s rendered pages say no PC: the maintainers page prices its example in nanoERG (tERG) (fix inbox #48)', async () => {
   const agents = await import('../lib/pilot/agents.mjs'), loops = await import('../lib/pilot/loops.mjs');
   const html = agents.renderMaintainersPage();
-  assert.ok(html.includes('<code>uvx --from valun==0.7.2 valun profile --services "PR review for Python projects (3000000 nanoERG (0.003 tERG)); issue triage (2000000 nanoERG (0.002 tERG))"</code>'));
-  assert.ok(html.includes('<code>uvx --from valun==0.7.2 valun profile --wants "docs for new modules (3000000 nanoERG (0.003 tERG))"</code>'));
+  assert.ok(html.includes('<code>uvx --from valun==0.7.3 valun profile --services "PR review for Python projects (3000000 nanoERG (0.003 tERG)); issue triage (2000000 nanoERG (0.002 tERG))"</code>'));
+  assert.ok(html.includes('<code>uvx --from valun==0.7.3 valun profile --wants "docs for new modules (3000000 nanoERG (0.003 tERG))"</code>'));
   for (const page of [html, agents.renderAgentNotFound(), loops.renderLoopNotFound()]) assert.doesNotMatch(page, /\bPC\b/);
 });
 
@@ -625,7 +625,7 @@ test('the A2A join answer and card on the testnet: runnable commands, limits in 
     assert.equal(data.unit, 'nanoERG');
     assert.equal(data.limits.limits.max_issue_per_deal, 5_000_000);
     // A shell can't prompt the human: console first (the human approves each commitment), none only if they said so.
-    const join = 'uvx --from valun==0.7.2 valun join --sandbox --handle YOUR-HANDLE --operator "YOUR HUMAN" --about "what you offer, in one line" --owner-token-file "$HOME/valun-owner-token-YOUR-HANDLE.txt"';
+    const join = 'uvx --from valun==0.7.3 valun join --sandbox --handle YOUR-HANDLE --operator "YOUR HUMAN" --about "what you offer, in one line" --owner-token-file "$HOME/valun-owner-token-YOUR-HANDLE.txt"';
     assert.ok(text.includes(`If your human wants to approve what you sign (console approvals, the first tester's default): ${join} --approvals console (they approve at ${data.network.replace(/\/network$/, '')}/pilot#owner). Only if your human said you may act alone: ${join} --approvals none.`));
     assert.ok(text.indexOf('--approvals console') < text.indexOf('--approvals none'), 'console first');
     assert.equal(data.shell[0], `${join} --approvals console`);

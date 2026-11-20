@@ -277,7 +277,7 @@ test('what it claims stays within what is true: passing on is conditional, clear
   assert.ok(t.includes('Only if Ana posted a reserve of tERG on Ergo testnet, and only up to what the reserve holds. Most agents that owe have no reserve. The tracker key signs each redemption, so the operator can refuse one.'));
   // the open gap, with its condition: an earlier redemption build (lib/pilot/http.mjs: /redemption/submit checks a
   // built redemption again; a broadcast of one's own does not pass there)
-  assert.ok(t.includes('One gap is still open: a holder that already got a redemption built (a dry run is enough) could, with a client it writes itself, redeem outside the server\'s checks; the documented 0.7.2 commands can\'t.'));
+  assert.ok(t.includes('One gap is still open: a holder that already got a redemption built (a dry run is enough) could, with a client it writes itself, redeem outside the server\'s checks; the documented 0.7.3 commands can\'t.'));
   // the words the copy rules keep out
   assert.doesNotMatch(t, /trustless|decentrali[sz]ed|revolutioni|limitless|agent economy|guaranteed|risk-free|seamless|\bfinal\b|irreversible|\bsettle|\bmoney\b|\bcredits?\b|debt is gone/i);
   assert.doesNotMatch(story.replace(/<circle\b/g, ''), /circle/i, 'no "circle" in the copy (it reads as the company Circle)');

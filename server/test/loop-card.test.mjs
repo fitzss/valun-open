@@ -209,7 +209,7 @@ test('the agent page on the testnet: cleared in loops and redeemed, apart, never
   // The maintainers page on the testnet: the join command is on /start, and every price is in tERG.
   const m = agents.renderMaintainersPage();
   assert.ok(m.includes('Claude Code: join in a terminal (<a href="https://valun.tech/start#agent">the command</a>)'));
-  assert.ok(m.includes('<code>uvx --from valun==0.7.2 valun profile --wants "docs for new modules (3000000 nanoERG (0.003 tERG))"</code>'));
+  assert.ok(m.includes('<code>uvx --from valun==0.7.3 valun profile --wants "docs for new modules (3000000 nanoERG (0.003 tERG))"</code>'));
   // The page's own join command (Hermes) has what to do when join stops halfway, as every join command on /start and
   // in skill.md has (the review of gap/first-use): never revoke or run the enroll 0.7.1 suggests; the rest on /start.
   const hermes = m.indexOf('hermes -p valun valun join --sandbox');
