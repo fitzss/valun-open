@@ -8,9 +8,9 @@ valun.sandbox.Seller, the loop of the deterministic sandbox seller.
 
 A seller can also pay for work: its wants (AISeller(wants=...), a dict of want specs, below). Another agent proposes a
 want with role payee; the seller takes it within its daily counts, and when the work is delivered it asks its model
-whether the work meets the want's terms: it pays with its own credit note if so (or if the model cannot tell), and
-disputes it with the reasons if not. A buyer that owes the seller is paid back this way in work: the two debts form a
-loop, which the set-off cancels. Only deals the seller took as wants are ever reviewed by it.
+whether the work meets the want's terms: it pays with its own note if so (or if the model cannot tell), and disputes
+it with the reasons if not. A buyer that owes the seller can clear what it owes this way: the two notes form a loop, and
+a set-off clears the same amount from both, up to the smaller one. Only deals the seller took as wants are ever reviewed by it.
 
 Spending is capped in dollars, computed from the API's own token counts and the price list below:
 - a monthly and a daily budget (--monthly-usd, --daily-usd). A job starts only if its worst case (its input, plus
@@ -38,6 +38,14 @@ from . import sandbox as vsandbox
 
 DEFAULT_MODEL = 'claude-opus-5-5'
 ATTEMPTS = 3                       # API failures on one offer before the seller declines it
+# When the seller's own credit limit refuses an acceptance (mandate_exceeded: the notes it holds would pass its owner's
+# max_claims_total), it declines that offer at once, saying so, and declines new paid jobs for FULL_RETRY_S before it
+# tries again, with no model call. Fix inbox #170: it used to retry each pass, spending a model call each time, and the
+# sixth try read "I do at most 6 checks a day for one buyer" on that buyer's first check.
+FULL_RETRY_S = 600
+FULL_TEXT = ("I can't take paid work right now: I already hold as many notes as my operator allows (my credit limit), so "
+             "I couldn't accept yours. Hire sandbox-exact or another agent instead; I take work again once some of the "
+             "notes I hold are paid back or cleared.")
 
 # USD per million tokens (input, output), Claude API first-party rates as of 2026-11; Haiku 5.5 for prompts up to 100K
 # tokens, which is every prompt here. A model not listed is priced at UNKNOWN_PRICE, so an unexpected model can only make
@@ -441,6 +449,15 @@ class Budget:
         self.s['buyers'][key] = self.s['buyers'].get(key, 0) + 1
         self.save()
 
+    def unbump(self, key):
+        """One count fewer today under `key`, never below 0: a job whose acceptance failed on the seller's side uses none
+        of the buyer's allowance (fix inbox #170). Its dollars stay spent."""
+        self.roll()
+        n = self.s['buyers'].get(key, 0)
+        if n > 0:
+            self.s['buyers'][key] = n - 1
+        self.save()
+
     def save(self):
         tmp = self.path + '.tmp'
         with open(tmp, 'w', encoding='utf-8') as f:
@@ -486,6 +503,7 @@ class AISeller(vsandbox.Seller):
         self.checks_per_buyer = int(checks_per_buyer)
         self.handle = handle or 'a seller'
         self.failures = {}      # deal id -> API failures so far
+        self.full = None        # (until, the server's words) while its own credit limit refuses acceptances (FULL_RETRY_S)
         # Paying for work: the want specs, how many of each it takes a day from one agent and in all, and a JSON-lines
         # file that keeps every delivery it checked (None: not kept).
         self.wants, self.wants_per_payee, self.wants_per_day = dict(wants or {}), int(wants_per_payee), int(wants_per_day)
@@ -582,6 +600,9 @@ class AISeller(vsandbox.Seller):
             # buyer accepted would agree the deal with no work done, and deliver() would have nothing to deliver.
             asked = vc.amount_text(ask, getattr(self.c, 'unit', 'PC'))
             return self._decline(did, f'My price for {service} is {asked}; send an offer at that price.', 'price', price=price, ask=ask)
+        if self.full and time.time() < self.full[0]:
+            # Its credit limit refused an acceptance less than FULL_RETRY_S ago: declined before any model call (#170).
+            return self._decline(did, FULL_TEXT, 'credit_limit', retry_after_s=round(self.full[0] - time.time()))
         key, limit = self.counted(buyer, service), (self.checks_per_buyer if service == 'check' else self.jobs_per_buyer)
         if self.budget.buyer_jobs(key) >= limit:
             what = 'checks' if service == 'check' else 'jobs'
@@ -622,8 +643,16 @@ class AISeller(vsandbox.Seller):
             self.c.accept(did, chk['terms_hash'])
         except vc.ValunError as e:
             self.budget.s['pending'].pop(did, None)
-            self.budget.save()
-            return self.note(deal=did, action='accept_failed', error=e.code, message=str(e)[:300], cost=round(r['cost'], 5))
+            self.budget.unbump(key)          # the seller's failure: none of the buyer's allowance is used (#170)
+            self.note(deal=did, action='accept_failed', error=e.code, message=str(e)[:300], cost=round(r['cost'], 5))
+            if e.code == 'mandate_exceeded':
+                # Its own credit limit: declined now, and new paid jobs for FULL_RETRY_S, never retried pass after pass.
+                self.full = (time.time() + FULL_RETRY_S, str(e)[:300])
+                return self._decline(did, FULL_TEXT, 'credit_limit')
+            n = self.failures[did] = self.failures.get(did, 0) + 1
+            if n >= ATTEMPTS:
+                return self._decline(did, f'I could not accept your offer ({e.code}); please send a fresh one.', 'accept_failed')
+            return None                 # left open: tried again on the next pass
         self.note(deal=did, action='accept', service=service, price=price, cost=round(r['cost'], 5), model=r['model'],
                   request_id=r.get('request_id'))
         try:

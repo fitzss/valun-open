@@ -197,7 +197,7 @@ test('prepare(): a missing hash, a misspelt value or unreadable arguments give a
 
 test('prepare(): known commitments get their own text, unknown tools the generic one, non-commitments none', async () => {
   const cases = [[Agent(DEAL), ...ACCEPT, "ACCEPT bob's offer"], [Agent(DEAL), ...COUNTER, 'COUNTER-OFFER to bob'],
-    [Agent(DEAL), ...REVIEW, 'ISSUE A CREDIT NOTE of 20 PC'],
+    [Agent(DEAL), ...REVIEW, 'ISSUE A NOTE of 20 PC'],
     [Agent({}, null, PEOPLE), 'valun_propose', {counterparty: 'BOB ', role: 'payer', title: 't', description: 'x', deliverable: 'd', price: 3},
       `NEW OFFER to bob (${BOB_ID})`],
     [Agent({}, ME), 'valun_set_limits', {max_per_deal_as_payer: 20}, 'max_per_deal_as_payer: 10 -> 20 (your owner mandate: 25)']];
@@ -294,7 +294,7 @@ test('snapshot: the role comes from the signed terms, and what the server says a
   assert.equal(await unbound(Agent(makeDeal(makeTerms({dealId: 'vd_2222222222222222'}))), ...ACCEPT), 'deal_mismatch');
   assert.equal(await unbound(Agent(makeDeal(makeTerms({proposer: ME_ID}))), ...ACCEPT), 'own_offer', 'only theirs is answered');
   assert.equal(await unbound(Agent(makeDeal(makeTerms({proposer: ME_ID}))), ...COUNTER), 'own_offer');
-  assert.ok((await Agent(makeDeal(makeTerms({proposer: ME_ID}))).prepare(...REVIEW)).text.includes('ISSUE A CREDIT NOTE'), 'either side proposed');
+  assert.ok((await Agent(makeDeal(makeTerms({proposer: ME_ID}))).prepare(...REVIEW)).text.includes('ISSUE A NOTE'), 'either side proposed');
   const euros = makeTerms();
   euros.price = {amount: 20, unit: 'EUR'};
   assert.equal(await unbound(Agent(makeDeal(euros)), ...ACCEPT), 'bad_terms');

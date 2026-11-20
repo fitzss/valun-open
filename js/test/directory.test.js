@@ -126,13 +126,38 @@ test("directory: the operator's always-on agents come first, then its house agen
   assert.deepEqual(handles(r), ['house-scribe', 'scribe-fan']);
 });
 
+test('directory: sandbox-exact comes first by rank, and the server\'s agents are labelled (fix inbox #177 item 6)', async () => {
+  // as the server's directoryOrder lists it (0.7.2 put it first only by the handle tie-break), in the server's A2A words
+  const people = [person(1, 'basis-busy', {seen: 0.01}), person(2, 'house-scribe', {seen: 0.5, house_agent: true}),
+    person(3, 'sandbox-mallory', {seen: 0.01, operator_run: true}), person(5, 'sandbox-exact', {seen: 3, operator_run: true}),
+    person(0, 'me', {id: ME, seen: 0})];
+  let r = await agentOf(people).call('valun_directory', {});
+  assert.deepEqual(handles(r), ['sandbox-exact', 'sandbox-mallory', 'house-scribe', 'basis-busy']);
+  assert.deepEqual(r.participants.map(e => e.label ?? null), [
+    'practice agent, operator-run; always exact, the one to try first',
+    'practice agent, operator-run; wrong on purpose about half the time, for trying a dispute',
+    'house agent, operator-run; Claude on a shared daily and monthly budget, so it may decline', null]);
+  assert.ok(!Object.hasOwn(r.participants[3], 'label'), 'only the agents the server runs have one');
+  assert.deepEqual(Object.keys(r.participants[0]).slice(0, 5), ['handle', 'id', 'name', 'operator', 'label']);
+  // a participant that only calls itself sandbox-exact is not the server's (operator_run is the server's word)
+  r = await agentOf([person(5, 'sandbox-exact', {seen: 0.01}), person(3, 'sandbox-mallory', {seen: 3, operator_run: true})])
+    .call('valun_directory', {});
+  assert.deepEqual(handles(r), ['sandbox-mallory', 'sandbox-exact']);
+  const a = agentOf([person(1, null, {seen: 1})]);
+  a.fake.network = 'valun-testnet-1';             // the pilot's note keeps its words (the server's pilot labels)
+  const {note} = await a.call('valun_directory', {});
+  assert.ok(note.startsWith('positions are the notes each agent holds (credit_notes_they_hold_PC) and issued '
+    + '(credit_notes_they_owe_PC), outstanding'), note);
+  for (const words of ['IOU', 'credit note ', 'credit notes ', 'creditor', "issuer's reserve"]) assert.ok(!note.includes(words), words);
+});
+
 test('directory: the default page is ten and says how to see more', async () => {
   const a = agentOf(crowd(25));
   const r = await a.call('valun_directory', {});
   assert.deepEqual(handles(r), agents(1, 10));
   assert.deepEqual(Object.keys(r), ['participants', 'total_matching', 'offset', 'next_offset', 'note', 'how_to_see_more']);
   assert.deepEqual([r.total_matching, r.offset, r.next_offset], [25, 0, 10]);
-  assert.equal(r.how_to_see_more, "Showing 1-10 of 25 (the operator's always-on agents first, then the most recently active). For "
+  assert.equal(r.how_to_see_more, "Showing 1-10 of 25 (sandbox-exact first, then the operator's other agents, then its house agents, then the most recently active). For "
     + 'more, call valun_directory again with offset 10, or narrow it with query.');
   assert.ok(r.note.endsWith(' A participant whose agent has not been seen in the last 24 hours may never answer an offer.'));
   assert.equal(a.fake.reads, 1);
@@ -147,7 +172,7 @@ test('directory: offset pages on through every match once', async () => {
   assert.equal(new Set(all).size, 25);
   const r = pages[1];
   assert.deepEqual([r.offset, r.next_offset, r.total_matching], [10, 20, 25]);
-  assert.equal(r.how_to_see_more, "Showing 11-20 of 25 (the operator's always-on agents first, then the most recently active). For "
+  assert.equal(r.how_to_see_more, "Showing 11-20 of 25 (sandbox-exact first, then the operator's other agents, then its house agents, then the most recently active). For "
     + 'more, call valun_directory again with offset 20, or narrow it with query.');
   const last = pages[2];                                // the last page: nothing more to show
   assert.deepEqual([handles(last), last.offset, last.total_matching], [agents(21, 25), 20, 25]);

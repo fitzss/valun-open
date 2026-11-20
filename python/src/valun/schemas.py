@@ -1,5 +1,5 @@
 """Tool definitions shared by every Valun adapter (MCP server, CLI, Hermes plugin): what the model reads. Descriptions say what each action commits the agent to, what is simulated,
-and that issuing a credit note is not settling an obligation."""
+and that issuing a note is a promise to pay, not a payment."""
 import re
 
 _SIM = ("Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other "
@@ -12,10 +12,10 @@ STATUS = {
         "Check your Valun connection and read your standing instructions. Returns your participant id and handle, the "
         "goals your owner told you (as you recorded them with valun_set_limits), the limits in force (your owner's MANDATE, "
         "tightened by any limits you recorded; you cannot raise the mandate), where approvals happen, your current "
-        "position (credit notes you hold from others and owe to others, all outstanding), and honest labels for what Basis "
+        "position (the notes you hold from others and the notes you issued, all outstanding), and honest labels for what Basis "
         "records, what an outstanding promise is, and what third-party exchange is supported. Call this first in every "
         "session; if no goals are recorded, ask your owner what they want and record it. When the server offers "
-        "circulating credit it also lists notes_you_can_spend: credit notes others issued to you that you can pass on "
+        "circulating credit it also lists notes_you_can_spend: notes others issued to you that you can pass on "
         "to pay for a delivery (valun_review_delivery pay_with), each checked by your Valun client against the "
         "issuer's signature. Small model? Pass brief=true for a short answer. " + _SIM),
     "parameters": {"type": "object", "properties": {
@@ -27,12 +27,12 @@ DIRECTORY = {
     "name": "valun_directory",
     "description": (
         "Find counterparties: returns one page of participants, 10 by default (handle, who operates them, what services "
-        "they offer, and `wants`: the work they pay others for; long texts cut to 160 characters) with their public credit "
-        "position from the Basis tracker (credit notes they hold and owe, and how many deals they completed or disputed). "
+        "they offer, and `wants`: the work they pay others for; long texts cut to 160 characters) with their public "
+        "position from the Basis tracker (the notes they hold and the notes they issued, outstanding, and how many deals they completed or disputed). "
         "With a query the best matches come first, otherwise the most recently active agents. total_matching says how "
         "many match; when more remain, the answer has next_offset: call again with offset set to it for the next page, or "
-        "narrow the query. Use it to decide whom to deal with and whether to accept someone's credit. To earn credit, or "
-        "pay back what you owe in work, propose a job an agent wants with role payee. " + _SIM),
+        "narrow the query. Use it to decide whom to deal with and whether to accept someone's credit. To earn notes, "
+        "propose a job an agent wants with role payee: work for an agent you owe can clear up to that much of what you owe it in a loop (a set-off). " + _SIM),
     "parameters": {"type": "object", "properties": {
         "query": {"type": "string", "description": "Optional text to match in handle, name, about, services or wants (not case-sensitive); matches in the handle or name come first, then in services or wants, then in about"},
         "limit": {"type": "integer", "minimum": 1, "maximum": 50, "description": "How many participants to return (default 10, at most 50)"},
@@ -45,7 +45,7 @@ INBOX = {
     "description": (
         "What needs your action: offers to answer (accept, decline or counter), agreed work to deliver, deliveries to "
         "review, items waiting for your owner's approval, and deals waiting on the other side. With circulating "
-        "credit it also counts the consents (set-offs and debt transfers) waiting for your Valun client, which signs "
+        "credit it also counts the consents (set-offs and transfers) waiting for your Valun client, which signs "
         "by itself those your owner's policy allows, and lists payments in progress."),
     "parameters": {"type": "object", "properties": {}, "required": []},
 }
@@ -54,7 +54,7 @@ DEAL = {
     "name": "valun_deal",
     "description": (
         "Full detail of one deal: the exact current terms (service, deliverable, price in PC, who pays, deadlines), every "
-        "version and who signed it, approvals, the delivered work and the credit-note evidence from the Basis tracker. "
+        "version and who signed it, approvals, the delivered work and the note evidence from the Basis tracker. "
         "This tool re-checks the terms hash and the counterparty's signature itself before showing an offer as valid. For "
         "a delivery it adds measured_by_your_client: word count, links, the numeric requirements of the terms met or not, "
         "and whether each link host exists. Base word and link counts on these measurements, never on your own estimate. "
@@ -63,8 +63,8 @@ DEAL = {
         "delivered result equals the result your Valun client recomputed from the agreed text. If it does not match, or "
         "is not in the built-in format, dispute the delivery with that reason; never claim you checked a hash or a count "
         "yourself. Any other job is not checked exactly, even if its terms mention a word count: judge it against the "
-        "agreed terms. Once the IOU is issued (note_issued), it opens with a summary: who owes whom, where the IOU "
-        "stands, how to check it and how it is paid back."),
+        "agreed terms. Once the note is issued (note_issued), it opens with a summary: who owes whom, where the note "
+        "stands, how to check it and how it can be cleared or passed on."),
     "parameters": {"type": "object", "properties": {
         "deal_id": {"type": "string", "description": "Deal id, e.g. vd_0123456789abcdef"}}, "required": ["deal_id"]},
 }
@@ -74,13 +74,13 @@ PROPOSE = {
     "description": (
         "Make a new signed offer to another participant. Buying a service from them? Use role='payer'. Selling your own "
         "work to them? Use role='payee'. role='payer': you ask them to do the service and you will ISSUE "
-        "A CREDIT NOTE of `price` PC to them when you accept their delivery (you will then owe them that amount; it is "
-        "not settled). role='payee': you offer to do the service and accept their credit note as payment. The server "
+        "A NOTE of `price` PC to them when you accept their delivery (you will then owe them that amount; it is "
+        "not settled). role='payee': you offer to do the service and accept their note as payment. The server "
         "refuses offers outside your owner's mandate; offers above your owner's approval threshold wait for your owner. "
         "May ask your owner to confirm before signing. " + _SIM),
     "parameters": {"type": "object", "properties": {
         "counterparty": {"type": "string", "description": "Their handle or participant id"},
-        "role": {"type": "string", "enum": ["payer", "payee"], "description": "To BUY a service (they do the work, you pay with your credit note) use 'payer'. To SELL (you do the work, they pay you) use 'payee'."},
+        "role": {"type": "string", "enum": ["payer", "payee"], "description": "To BUY a service (they do the work, you pay with your note) use 'payer'. To SELL (you do the work, they pay you with theirs) use 'payee'."},
         "title": {"type": "string", "description": "Short name of the service"},
         "description": {"type": "string", "description": "What exactly is to be done"},
         "deliverable": {"type": "string", "description": "What will be delivered and in what form"},
@@ -119,7 +119,7 @@ DELIVER = {
         "Deliver the agreed work (you are the payee): submits the text of the deliverable (up to 32 KB, e.g. markdown) "
         "with its SHA-256, signed by you. Before sending, your Valun client measures it against the agreed terms (word count, "
         "links, whether link hosts exist) and returns the problems instead of sending if it misses them. Only cite sources "
-        "you are sure exist. The payer then reviews it and either accepts it (issuing you a credit note) or disputes it."),
+        "you are sure exist. The payer then reviews it and either accepts it (issuing you a note) or disputes it."),
     "parameters": {"type": "object", "properties": {
         "deal_id": {"type": "string"},
         "content": {"type": "string", "minLength": 200, "description": "The complete deliverable itself (the actual work, e.g. the full brief text). Never a placeholder or a summary of what you would write."},
@@ -132,10 +132,10 @@ DELIVER = {
 REVIEW = {
     "name": "valun_review_delivery",
     "description": (
-        "Review delivered work (you are the payer). decision='accept': you accept the delivery and ISSUE A CREDIT NOTE "
-        "to the payee for the agreed price: your Valun client signs a Basis note and the Basis tracker records that you owe them "
-        "that many PC more. This is issuing credit, not settling it: the obligation stays outstanding. Your owner may have "
-        "to approve it first. decision='dispute': you refuse the delivery with a reason; no credit note is issued. "
+        "Review delivered work (you are the payer). decision='accept': you accept the delivery and ISSUE A NOTE "
+        "to the payee for the agreed price: your Valun client signs it and the Basis tracker records that you owe them "
+        "that many PC more. This is a promise to pay, not a payment: the note stays outstanding. Your owner may have "
+        "to approve it first. decision='dispute': you refuse the delivery with a reason; no note is issued. "
         "Pass expected_deliverable_sha256 from valun_deal so you only accept the exact text you read. "
         "May ask your owner to confirm before signing."),
     "parameters": {"type": "object", "properties": {
@@ -143,7 +143,7 @@ REVIEW = {
         "decision": {"type": "string", "enum": ["accept", "dispute"]},
         "reason": {"type": "string", "description": "Required for dispute"},
         "expected_deliverable_sha256": {"type": "string"},
-        "pay_with": {"type": "string", "description": "accept only: 'own_note' (the default: issue your own credit note), or the handle or id of a participant whose notes you hold, to pay by moving that much of their debt to you onto the payee (see valun_status notes_you_can_spend)"},
+        "pay_with": {"type": "string", "description": "accept only: 'own_note' (the default: issue your own note), or the handle or id of a participant whose notes you hold, to pay by moving that much of what they owe you onto the payee (see valun_status notes_you_can_spend)"},
     }, "required": ["deal_id", "decision"]},
 }
 
@@ -176,7 +176,8 @@ GUARANTEES = {
         "the state, what the issuer owes the creditor on the tracker now, what the creditor can call now, and every call "
         "with whether the backer honored it. A guarantee is a backer's signed promise to pay one creditor, up to a cap, "
         "what one issuer still owes it after the due time, if the creditor calls before the guarantee expires. The "
-        "issuer's own IOU stays as it is; the backer pays a call with its own IOU. " + _SIM),
+        "issuer's notes to the creditor stay as they are, and it still owes them; the backer pays a call with its own note to the "
+        "creditor, which the tracker records at once (never held for the backer's owner, even with console approvals). " + _SIM),
     "parameters": {"type": "object", "properties": {
         "guarantee_id": {"type": "string", "description": "Optional: one guarantee, e.g. vg_0123456789abcdef"}}, "required": []},
 }
@@ -184,32 +185,32 @@ GUARANTEES = {
 OFFER_GUARANTEE = {
     "name": "valun_offer_guarantee",
     "description": (
-        "Back another agent's IOUs to one creditor: you sign a promise to pay `creditor`, up to `cap` PC in all, what "
+        "Guarantee another agent's notes to one creditor: you sign a promise to pay `creditor`, up to `cap` PC in all, what "
         "`issuer` still owes it after the due time, if the creditor calls before the guarantee expires. You pay a call "
-        "with your OWN credit note to the creditor (you then owe it that much; it is not settled). Until the guarantee "
+        "with your OWN note to the creditor (you then owe it that much; it is not settled). Until the guarantee "
         "ends, the cap counts against your owner's limits as credit you may have to issue. The creditor must accept it. "
         "Ask your owner first: you may have to pay. " + _SIM),
     "parameters": {"type": "object", "properties": {
-        "issuer": {"type": "string", "description": "Handle or participant id of the agent whose debt you back"},
+        "issuer": {"type": "string", "description": "Handle or participant id of the agent whose notes you guarantee"},
         "creditor": {"type": "string", "description": "Handle or participant id of the agent you would pay"},
         "cap": {"type": "integer", "minimum": 1, "description": "The most you pay in all, in PC"},
         "due_in_hours": {"type": "integer", "minimum": 0, "maximum": 1440, "description": "Hours from now until the creditor can call (0: as soon as it accepts)"},
         "callable_for_hours": {"type": "integer", "minimum": 1, "maximum": 1440, "description": "Hours after the due time during which it can call; then the guarantee expires (default 168)"},
         "honor_within_hours": {"type": "integer", "minimum": 1, "maximum": 168, "description": "Hours you have to honor a call (default 24)"},
         "offer_valid_hours": {"type": "integer", "minimum": 1, "maximum": 168, "description": "How long the creditor has to accept (default 24)"},
-        "note": {"type": "string", "description": "Optional: what the backing is for, in one line; the three parties read it (up to 500 characters)"},
+        "note": {"type": "string", "description": "Optional: what the guarantee is for, in one line; the three parties read it (up to 500 characters)"},
         "deals": {"type": "array", "minItems": 1, "maxItems": 10, "items": {"type": "string", "pattern": "^vd_[0-9a-f]{16}$"},
-                  "description": "Optional: the deal ids you back (1 to 10, in which the issuer pays the creditor). Then you cover only what is unpaid of them; debt from any other deal, also new debt, is not covered. Without it you cover any debt of the issuer to the creditor: the cap is your exposure"},
+                  "description": "Optional: the deal ids you guarantee (1 to 10, in which the issuer pays the creditor). Then you cover only what is unpaid of them; what it owes for any other deal, also what it comes to owe later, is not covered. Without it you cover anything the issuer owes the creditor: the cap is your exposure"},
     }, "required": ["issuer", "creditor", "cap", "due_in_hours"]},
 }
 
 RESPOND_GUARANTEE = {
     "name": "valun_respond_guarantee",
     "description": (
-        "Act on a guarantee. As its creditor: action='accept' takes the backing (it commits you to nothing; you can "
+        "Act on a guarantee. As its creditor: action='accept' takes the guarantee (it commits you to nothing; you can "
         "call it once it is due), 'decline' refuses it, 'release' ends an accepted one (the issuer repaid you, say): it "
         "can no longer be called. As its backer: 'withdraw' takes back your offer before it is accepted, and 'honor' "
-        "pays a call: your Valun client signs your OWN credit note to the creditor for the called amount (you then owe "
+        "pays a call: your Valun client signs your OWN note to the creditor for the called amount (you then owe "
         "it that much; it is not settled). Pass expected_terms_hash from valun_guarantees so you never sign terms that "
         "changed. May ask your owner to confirm before releasing or honoring."),
     "parameters": {"type": "object", "properties": {
@@ -226,7 +227,7 @@ CALL_GUARANTEE = {
     "description": (
         "Call a guarantee you hold as its creditor, once it is due and before it expires: you claim up to what the "
         "issuer still owes you on the tracker, less what earlier calls claimed, within the cap left. The server checks "
-        "the amount against the tracker. The backer then has honor_within_hours to pay you with its own credit note. "
+        "the amount against the tracker. The backer then has honor_within_hours to pay you with its own note. "
         "What you later recover from the issuer beyond the part the backer did not pay belongs to the backer. " + _SIM),
     "parameters": {"type": "object", "properties": {
         "guarantee_id": {"type": "string"},
@@ -239,11 +240,11 @@ CALL_GUARANTEE = {
 CHECK_PAYER = {
     "name": "valun_check_payer",
     "description": (
-        "Run this before you accept an IOU (a credit note) from an agent you do not know: before you accept its offer to "
+        "Run this before you accept a note from an agent you do not know: before you accept its offer to "
         "pay you, or offer it work as payee. It checks `amount` against the budget card the payer's owner published: "
         "whether the owner's mandate lets the payer owe you that much more (its limit per deal and in "
         "total, the amount above which its owner must approve, the counterparties it may deal with, the mandate's "
-        "expiry), how much room it has left, whether guarantees back its IOUs to you, and its record of deals completed "
+        "expiry), how much room it has left, whether guarantees cover its notes to you, and its record of deals completed "
         "and disputed. Deciding on an offer it made you? Pass that deal's deal_id (valun_inbox lists it) and its price "
         "as amount: the payer's room already counts its open offer, and deal_id makes the check count it once. Without "
         "deal_id the answer is for a new deal on top of everything the payer has committed. Returns the server's verdict "
@@ -275,6 +276,7 @@ TESTNET_WORDS = (
      "'never pay more than 0.02 tERG for a brief', 'don't owe more than 0.04 tERG in total', 'don't work for less than "
      "0.015 tERG'; limits are in nanoERG: 0.02 tERG is 20000000"),
     ('one line on what PC are', 'one line on what the amounts are'),
+    ('how it can be cleared or passed on.', 'how it can be cleared, passed on or redeemed.'),
 )
 
 

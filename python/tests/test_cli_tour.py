@@ -34,8 +34,8 @@ TOUR_TOTALS = {1: {'sandbox-exact -> you': 3},
                4: {'sandbox-exact -> you': 0, 'you -> sandbox-exact': 0, 'sandbox-mallory -> you': 2},
                5: {'sandbox-exact -> you': 0, 'you -> sandbox-exact': 0, 'sandbox-mallory -> you': 0}}
 TOUR_DONE = ('The tour is complete: you earned 6 PC and spent 6 PC (4 by transfer, 2 with your own note), and set-offs '
-             'cancelled 2 PC of your claims and 2 PC of your debts without changing your net position. You can keep trading '
-             'with the sandbox agents.')
+             'cleared 2 PC of the notes you hold and 2 PC of the notes you issued, without changing your net position. You '
+             'can keep trading with the sandbox agents.')
 # What a profile 's' that has not joined tells its owner to run (the 0.7.2 clean-user test): the sandbox join, complete
 # as written but for its placeholders, then its uvx form.
 SANDBOX_JOIN = 'valun --profile s join --sandbox --handle YOUR-HANDLE --operator "YOUR NAME"'
@@ -115,11 +115,17 @@ class Cli(unittest.TestCase):
         with open(os.path.join(self.home.name, 'profiles', 's.json'), encoding='utf-8') as f:
             return json.load(f)
 
-    def main(self, argv, env=None):
+    def main(self, argv, env=None, tty=False, answers=None):
         """cli.main(argv) as given (no --profile added), with VALUN_PROFILE and VALUN_SERVER unset (then `env` set), as a
-        command run in another shell: (rc, output)."""
-        out = io.StringIO()
-        with mock.patch.dict(os.environ), contextlib.redirect_stdout(out):
+        command run in another shell (a terminal, with tty: input() answers `answers`): (rc, output)."""
+        out = Tty() if tty else io.StringIO()
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.dict(os.environ))
+            stack.enter_context(contextlib.redirect_stdout(out))
+            if tty:
+                stack.enter_context(mock.patch.object(sys, 'stdin', Tty('')))
+            if answers is not None:
+                stack.enter_context(mock.patch('builtins.input', side_effect=answers))
             for k in ('VALUN_PROFILE', 'VALUN_SERVER'):
                 os.environ.pop(k, None)
             os.environ.update(env or {})
@@ -167,31 +173,149 @@ class Join(Cli):
         self.assertEqual(va.INVITE_CONSENT_POLICY, {'setoff': True, 'as_issuer': True, 'as_new_creditor': False, 'max_PC': 50})
 
 
-class ConsoleByDefault(Cli):
-    """Fitz's decision of 2026-11-17 (fix inbox #138): `valun join --sandbox` holds commitments for the owner console
-    when --approvals is not given; an invited join still asks. The owner token goes to a file the owner can find, and
-    `valun console` opens the console: its address, where the token is (never the token), what waits there."""
+class ApprovalsQuestion(Cli):
+    """Fix inbox #164 option 3 (Fitz, 2026-11-20): a `--sandbox` join that names no --approvals asks whether a person
+    will approve its agent's commitments, at a terminal only (stdin and stdout both one). Without one, or when its input
+    ends at the question, it refuses before anything is sent and prints both joins. yes: console (0.7.2's default since
+    #138); no: none, within the self-serve caps. An explicit --approvals always wins, and an invited join still uses ask."""
+    ARGS = ('join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann', '--server', SERVER)
 
-    def test_a_sandbox_join_without_approvals_uses_console_and_says_how_to_change_it(self):
-        rc, out = self.run_cli('join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann', '--server', SERVER,
-                               '--owner-token-file', self.token_file)
+    def ask_join(self, answers=None, tty=True, extra=()):
+        return self.run_cli(*self.ARGS, '--owner-token-file', self.token_file, *extra, tty=tty, answers=answers)
+
+    def assertNothingSent(self, rc, out):
+        self.assertEqual(rc, 2, out)
+        self.assertNotIn('POST /pilot/v1/join-sandbox', self.world.requests())
+        self.assertEqual(self.world.puts, [])
+        self.assertFalse(os.path.exists(os.path.join(self.home.name, 'profiles', 's.json')), 'no profile written')
+        self.assertFalse(os.path.exists(self.token_file), 'no token file written')
+
+    def assertRefusal(self, out):
+        self.assertTrue(out.startswith("Nothing was sent: a sandbox join that names no --approvals asks whether a person "
+                                       "will approve your agent's commitments, and there is no terminal here to ask in. "
+                                       'Run one of these:\n'), out)
+        console = self.printed(out, f'if a person will approve each one in the owner console ({SERVER}/pilot#owner):')
+        none = self.printed(out, 'if nobody will (your agent signs on its own, within the self-serve limits):')
+        self.assertEqual((console[console.index('--approvals') + 1], none[none.index('--approvals') + 1]), ('console', 'none'))
+        for argv in (console, none):        # this join, as given, with the mode added
+            self.assertEqual([a for a in argv if a not in ('--approvals', 'console', 'none')],
+                             ['--profile', 's', *self.ARGS[:-2], '--owner-token-file', self.token_file, '--server', SERVER])
+        return console, none
+
+    def test_without_a_terminal_it_refuses_and_names_both_joins(self):
+        rc, out = self.ask_join(tty=False)
+        self.assertNothingSent(rc, out)
+        console, none = self.assertRefusal(out)
+        # each runs as printed (in another shell, with no terminal either): an explicit mode is never asked
+        rc, out = self.main(none)
         self.assertEqual(rc, 0, out)
+        self.assertEqual((self.disk()['approvals'], self.world.puts), ('none', [{'approve_above': 5, 'auto_clear': True}]))
+        self.assertNotIn('Will a person approve?', out)
+
+    def test_stdin_a_terminal_and_stdout_not_is_no_terminal_to_ask_in(self):
+        with mock.patch.object(sys, 'stdin', Tty('')), mock.patch('builtins.input', side_effect=AssertionError('asked')):
+            rc, out = self.run_cli(*self.ARGS, '--owner-token-file', self.token_file)
+        self.assertNothingSent(rc, out)
+        self.assertRefusal(out)
+
+    def test_yes_is_console(self):
+        rc, out = self.ask_join(['yes'])
+        self.assertEqual(rc, 0, out)
+        self.assertIn("Approvals: will a person approve this agent's commitments?\n  yes: console. Your agent signs at once, "
+                      'and the Valun server holds its offers, counter-offers, acceptances and guarantee offers, and the note '
+                      'or payment by transfer it signs when it accepts a delivery, until that person approves each in the '
+                      f'owner console ({SERVER}/pilot#owner). Nothing notifies them.\n  no: none. Nobody is asked: your '
+                      "agent signs on its own, within this self-serve participant's limits.\n", out)
         self.assertEqual(self.world.puts, [{'approve_above': 0, 'review_deliveries': True, 'auto_clear': True}])
         disk = self.disk()
         self.assertEqual((disk['approvals'], disk['owner_token_file']), ('console', os.path.abspath(self.token_file)))
         self.assertIn('Approvals: console. Your agent signs at once and asks nobody', out)
         self.assertIn(cli.CONSOLE_HOLDS, out)
         self.assertIn('`valun --profile s console` opens the console and says what approving and rejecting do', out)
-        self.assertIn('Console is what `join --sandbox` uses when --approvals is not given. To change it: `valun --profile s '
-                      f'config approvals MODE --owner-token-file {cli._faithful(self.token_file, 300)}`', out)
+        self.assertIn('  You answered that a person will approve. If nobody will: `valun --profile s config approvals none '
+                      f'--owner-token-file {cli._faithful(self.token_file, 300)}`.', out)
+        self.assertNotIn('Console is what', out)
         self.assertNotIn('vpo_test-only', json.dumps(disk))
         # The Nov 18 fresh-join run (finding 3): the console paragraph was about 400 of join's 614 words. It is three
         # lines and a link now; `valun console` says what approving and rejecting do (CONSOLE_DECIDES).
         line = next(x for x in out.splitlines() if x.startswith('Approvals: console.'))
-        self.assertLessEqual(len(line), 4 * 118, line)
-        self.assertTrue(line.endswith(f'says what approving and rejecting do ({cli.CONSOLE_DOC}).'), line)
+        self.assertLessEqual(len(line.replace(SERVER, cli.DEFAULT_SERVER)), 4 * 118, line)    # it names the server twice
         self.assertNotIn(cli.CONSOLE_DECIDES, out)
-        self.assertLess(len(out.split()), 400, f'{len(out.split())} words')
+        self.assertLess(len(out.split()), 460, f'{len(out.split())} words')
+
+    def test_no_is_none_within_the_self_serve_caps(self):
+        rc, out = self.ask_join(['no'])
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.world.puts, [{'approve_above': 5, 'auto_clear': True}])     # the test world's cap
+        self.assertEqual(self.disk()['approvals'], 'none')
+        self.assertIn('Approvals: none. Your agent acts on its own within your limits', out)
+        self.assertIn('  You answered that nobody will approve. If a person will, in the owner console: `valun --profile s '
+                      f'config approvals console --owner-token-file {cli._faithful(self.token_file, 300)}`.', out)
+
+    def test_anything_but_yes_or_no_is_asked_again_and_enter_chooses_nothing(self):
+        answers = iter(['', 'maybe', ' Y '])
+        prompts = []
+
+        def answer(prompt=''):
+            prompts.append(prompt)
+            return next(answers)
+        with mock.patch.object(sys, 'stdin', Tty('')), mock.patch('builtins.input', answer):
+            out = Tty()
+            with contextlib.redirect_stdout(out):
+                rc = cli.main(['--profile', 's', *self.ARGS, '--owner-token-file', self.token_file])
+        out = out.getvalue()
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(prompts, [cli.APPROVALS_PROMPT] * 3)
+        self.assertEqual(out.count('Answer yes or no.'), 2)
+        self.assertEqual(self.disk()['approvals'], 'console')
+
+    def test_an_input_that_ends_at_the_question_refuses(self):
+        rc, out = self.ask_join(EOFError())
+        self.assertNothingSent(rc, out)
+        # at a terminal, the refusal says the input ended, never that there is no terminal (the 0.7.3 review, Ctrl+D)
+        self.assertIn("Nothing was sent: a sandbox join that names no --approvals asks whether a person will approve your "
+                      "agent's commitments, and its input ended at the question. Run one of these:\n", out)
+        self.assertNotIn('no terminal here', out)
+
+    def test_an_explicit_mode_is_never_asked_at_a_terminal_or_not(self):
+        for tty in (False, True):
+            for mode in ('console', 'none', 'ask', 'client-prompt'):
+                with self.subTest(tty=tty, mode=mode):
+                    rc, out = self.run_cli('--profile', f'e-{mode}-{int(tty)}', *self.ARGS[:-2], '--approvals', mode,
+                                           '--server', SERVER, '--owner-token-file',
+                                           os.path.join(self.home.name, f'owner-{mode}-{int(tty)}.txt'),
+                                           tty=tty, answers=AssertionError('asked'))
+                    self.assertEqual(rc, 0, out)
+                    self.assertNotIn('Will a person approve?', out)
+                    self.assertNotIn('You answered', out)
+                    with open(os.path.join(self.home.name, 'profiles', f'e-{mode}-{int(tty)}.json'), encoding='utf-8') as fh:
+                        self.assertEqual(json.load(fh)['approvals'], mode)
+
+    def test_a_join_that_lacks_its_handle_too_names_both_joins_with_the_placeholders(self):
+        rc, out = self.run_cli('join', '--sandbox', '--operator', 'Ann', '--server', SERVER)
+        self.assertNothingSent(rc, out)
+        self.assertTrue(out.startswith("Nothing was sent: this join needs a handle and whether a person will approve your "
+                                       "agent's commitments, and there is no terminal here to ask for them. Run one of "
+                                       'these, with your own handle (public and permanent: 3 to 24 letters, digits, _ or -, '
+                                       'starting with a letter):\n'), out)
+        self.assertIn(f'(your agent signs on its own, within the self-serve limits): `valun --profile s join --sandbox --handle '
+                      f'YOUR-HANDLE --operator Ann --approvals none --server {SERVER}`', out)
+        self.assertIn(f'owner console ({SERVER}/pilot#owner): `valun --profile s join --sandbox --handle YOUR-HANDLE '
+                      f'--operator Ann --approvals console --server {SERVER}`', out)
+
+    def test_a_console_join_links_to_the_joined_servers_own_start_approve(self):
+        # Fix inbox #176: 0.7.2 named https://valun.tech/start#approve on any server; the line names the joined server's
+        # own console and page, and no public host.
+        rc, out = self.run_cli(*self.ARGS[:-2], '--approvals', 'console', '--server', SERVER, '--owner-token-file',
+                               self.token_file)
+        self.assertEqual(rc, 0, out)
+        line = next(x for x in out.splitlines() if x.startswith('Approvals: console.'))
+        self.assertIn(f'({SERVER}/pilot#owner)', line)
+        self.assertTrue(line.endswith(f'says what approving and rejecting do ({SERVER}/start#approve).'), line)
+        self.assertNotIn('valun.tech', out)
+        self.assertEqual(cli.CONSOLE_DOC, '{server}/start#approve')
+        self.assertIn('(https://valun.tech/start#approve).', cli.JOIN_APPROVALS['console'].format(
+            server=cli.DEFAULT_SERVER, valun='valun', name='default', per_deal='', total='', token_file='', token_note=''))
 
     def test_an_invited_join_still_asks_and_any_mode_can_be_given(self):
         rc, out = self.run_cli('join', '--invite-from-stdin', '--handle', 'stranger', '--operator', 'Ann', '--server', SERVER,
@@ -215,11 +339,21 @@ class ConsoleByDefault(Cli):
         with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
             cli.main(['join', '--help'])
         words = ' '.join(out.getvalue().split())
-        for w in ('default: console with --sandbox, ask without', 'console: your agent signs at once',
+        for w in ("With --sandbox and no --approvals, join asks whether a person will approve your agent's commitments "
+                  '(yes: console; no: none)', 'with no terminal to ask in (stdin and stdout must both be one), it refuses '
+                  'before anything is sent and prints both commands', 'Without --sandbox the default is ask',
+                  'A mode given here is used as it is, and nothing is asked', 'console: your agent signs at once',
                   'never an honor of a guarantee call', 'ask: your MCP app shows you an approval form',
                   "own confirmation of each signing tool call; whatever it lets run is signed", 'none: your agent signs on its own',
                   'default: $HOME/valun-owner-token-HANDLE.txt'):
             self.assertIn(w, words)
+
+
+
+class ConsoleByDefault(Cli):
+    """Console approvals (Fitz's decision of 2026-11-17, fix inbox #138: 0.7.2's default for a sandbox join; since 0.7.3
+    chosen by answering yes, or by --approvals console: #164). The owner token goes to a file the owner can find, and
+    `valun console` opens the console: its address, where the token is (never the token), what waits there."""
 
     def console(self, *extra, env=None):
         opened = []
@@ -229,7 +363,7 @@ class ConsoleByDefault(Cli):
         return rc, out, opened
 
     def test_valun_console_prints_the_address_and_the_token_file_and_opens_it(self):
-        self.run_cli('join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann', '--server', SERVER,
+        self.run_cli('join', '--sandbox', '--approvals', 'console', '--handle', 'stranger', '--operator', 'Ann', '--server', SERVER,
                      '--owner-token-file', self.token_file)
         with mock.patch.object(cli, '_no_browser', lambda: None):
             rc, out, opened = self.console()
@@ -286,7 +420,7 @@ class ConsoleByDefault(Cli):
 
     def test_the_tour_in_console_mode_asks_nothing_here_and_says_where_its_steps_wait(self):
         # The server holds what the tour signs for the owner console: a terminal prompt as well would ask twice.
-        self.run_cli('join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann', '--server', SERVER,
+        self.run_cli('join', '--sandbox', '--approvals', 'console', '--handle', 'stranger', '--operator', 'Ann', '--server', SERVER,
                      '--owner-token-file', self.token_file)
         self.world.mandate.update(approve_above=0, review_deliveries=True)     # what the join's mandate PUT set
         rc, out, seen = self.console_tour()                     # no terminal: in console mode nothing is asked here
@@ -296,14 +430,14 @@ class ConsoleByDefault(Cli):
         # the 0.7.2 review: the tour's payments by transfer (steps 2 and 5) wait 20 minutes only
         self.assertIn(f'Console approvals: the tour asks nothing here. What it signs for your agent waits for you in the owner '
                       f'console ({SERVER}/pilot#owner; `valun --profile s console` opens it): its offers and acceptances, the '
-                      'IOUs it pays with (approve each by the deadline its card shows, within the hour), and its payments by '
+                      'notes it pays with (approve each by the deadline its card shows, within the hour), and its payments by '
                       'transfer (steps 2 and 5), which wait only 20 minutes before they end (the tour then signs them '
                       'again).', out)
 
     def test_a_console_tour_asks_here_once_the_mandate_no_longer_holds_every_step(self):
         """The 0.7.2 review: the tour took the profile's mode for the mandate, so an owner who had raised Ask me above or
         unticked Review deliveries since had those steps signed, and taking effect, with nobody asked."""
-        self.run_cli('join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann', '--server', SERVER,
+        self.run_cli('join', '--sandbox', '--approvals', 'console', '--handle', 'stranger', '--operator', 'Ann', '--server', SERVER,
                      '--owner-token-file', self.token_file)
         for change in ({'approve_above': 0, 'review_deliveries': False}, {'approve_above': 5, 'review_deliveries': True}):
             self.world.mandate.update(change)
@@ -368,10 +502,10 @@ class ConsoleByDefault(Cli):
         # the RC's staging test (2026-11-18): the console names the server's time, a minute sooner, so this one says
         # what it is
         self.assertIn(': not applied (the server held it for your owner, who rejected it in the owner console, and never '
-                      "sent it on). A new IOU of this deal can be signed now, while the pair's IOU is unchanged; paying it by "
+                      "sent it on). A new note of this deal can be signed now, while the pair's note is unchanged; paying it by "
                       "transfer waits until after 2026-11-18T00:12:33.997Z (your Valun client's time, a minute after the "
                       "server's, which the owner console shows, as a margin for clocks that differ), or until your client "
-                      'sees this IOU move past it', line)
+                      'sees this note move past it', line)
         self.assertNotIn('you resolved it', line)
         self.assertIn('did not apply (the server held it for your owner and never sent it on: its hold expired before your '
                       'owner decided)', cli._attempt_line(c, dict(row, state='dead', server_ended={'state': 'void_expired'})))
@@ -380,10 +514,10 @@ class ConsoleByDefault(Cli):
         transfer = dict(row, route='transfer', timestamp=1_794_957_033_999, edge=f"{'03' + '33' * 32}>{'02' + '11' * 32}",
                         server_ended={'state': 'rejected', 'approval_id': 'va_27df22079678', 'at': None})
         line = cli._attempt_line(c, transfer)
-        self.assertIn('A payment through the same IOU at the same prior state can be signed now; your own IOU or any other '
+        self.assertIn('A payment through the same note at the same prior state can be signed now; your own note or any other '
                       f'payment of this deal waits until after 2026-11-18T00:12:33.999Z ({va.MARGIN_WORDS}), or until your '
-                      'client sees that IOU move past it', line)
-        self.assertNotIn('A new IOU of this deal can be signed now', line)
+                      'client sees that note move past it', line)
+        self.assertNotIn('A new note of this deal can be signed now', line)
         # one approved after its hour was sent, and refused: never "never sent it on"
         late = cli._attempt_line(c, dict(row, state='dead', server_ended={'state': 'novation_expired'}))
         self.assertIn('did not apply (your owner approved it after its hour, and the tracker refused it)', late)
@@ -393,7 +527,7 @@ class ConsoleByDefault(Cli):
                       'signatures)', cli._attempt_line(c, dict(transfer, state='dead', server_ended={'state': 'expired'})))
 
     def test_doctor_names_the_console_command_in_console_mode(self):
-        self.run_cli('join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann', '--server', SERVER,
+        self.run_cli('join', '--sandbox', '--approvals', 'console', '--handle', 'stranger', '--operator', 'Ann', '--server', SERVER,
                      '--owner-token-file', self.token_file)
         rc, out = self.run_cli('doctor')
         self.assertIn('Approvals: console. ' + cli.APPROVAL_TEXT['console'] + ' `valun --profile s console` opens the owner '
@@ -432,9 +566,12 @@ class JoinKeepsTheOwnerToken(Cli):
     def rate_limit(self, route):
         self.world.fail[route] = [vc.ValunError(*self.RATE)]
 
-    def run_join(self, *extra, file=True):
-        return self.run_cli('join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann', '--server', SERVER, *extra,
-                            *(['--owner-token-file', self.token_file] if file else []))
+    def run_join(self, *extra, file=True, **kw):
+        # console (0.7.2's default for a sandbox join) unless the test names a mode: a sandbox join that names none asks
+        # whether a person will approve, and refuses here, with no terminal to ask in (fix inbox #164)
+        mode = () if '--approvals' in extra else ('--approvals', 'console')
+        return self.run_cli('join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann', '--server', SERVER, *mode,
+                            *extra, *(['--owner-token-file', self.token_file] if file else []), **kw)
 
     def token_in_file(self, path=None):
         with open(path or self.token_file, encoding='utf-8') as f:
@@ -595,11 +732,12 @@ class JoinKeepsTheOwnerToken(Cli):
     def test_a_token_file_not_written_is_named_file_and_said_what_it_is(self):
         # The RC's review (R2-OTHER-9 c): where the token file could not be named as one word (not written here), the
         # next commands printed --owner-token-file FILE with nothing that said FILE is the owner token file.
-        with self.no_file_at_all():
-            rc, out = self.run_join(file=False)                  # console, a sandbox join's default
+        with self.no_file_at_all():                             # the approvals question answered yes: console
+            rc, out = self.run_cli('join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann', '--server', SERVER,
+                                   tty=True, answers=['yes'])
         self.assertEqual(rc, 1, out)
-        self.assertIn('config approvals MODE --owner-token-file FILE` (MODE: ask, client-prompt or none; FILE: the file '
-                      'holding your owner token).', out)
+        self.assertIn('You answered that a person will approve. If nobody will: `valun --profile s config approvals none '
+                      '--owner-token-file FILE`; FILE: the file holding your owner token.', out)
         with self.no_file_at_all():
             rc, out = self.run_cli('--profile', 'asker', 'join', '--sandbox', '--handle', 'asker', '--operator', 'Ann',
                                    '--approvals', 'ask', '--server', SERVER)
@@ -1283,8 +1421,10 @@ class PrintedCommandsNameTheProfile(Cli):
         # both placeholders filled in: `valun join` refuses either one left as it is (the 0.7.2 review)
         argv = [{'YOUR-HANDLE': 'stranger', 'YOUR NAME': 'A Stranger'}.get(a, a) for a in shlex.split(cmd)]
         self.assertEqual(argv[:4], ['valun', '--profile', 's', 'join'])
-        rc, out = self.main(argv[1:])
+        # in a terminal it asks whether a person will approve (fix inbox #164); here nobody will
+        rc, out = self.main(argv[1:], tty=True, answers=['no'])
         self.assertEqual(rc, 0, out)
+        self.assertEqual(self.disk()['approvals'], 'none')
         self.assertIn('Joined Valun as stranger', out)
         self.assertEqual((self.disk()['participant_id'], self.disk()['server']), (S_ID, SERVER))
         with open(token_file, encoding='utf-8') as f:
@@ -1590,8 +1730,8 @@ class Tour(Cli):
         self.assertEqual(len(setoffs), 2)                                         # two 2-cycles, 2 PC each, signed by S
         self.assertEqual(w.position()['cleared_by_setoff'], 4)
         self.assertIn('\nThe tour is complete: you earned 6 PC and spent 6 PC (2 by transfer, 4 with your own note), and '
-                      'set-offs cancelled 4 PC of your claims and 4 PC of your debts without changing your net position. You '
-                      'can keep trading with the sandbox agents.\n', out)
+                      'set-offs cleared 4 PC of the notes you hold and 4 PC of the notes you issued, without changing your '
+                      'net position. You can keep trading with the sandbox agents.\n', out)
 
     def test_the_tour_asks_at_the_terminal_and_stops_when_declined(self):
         self.join()
@@ -1898,10 +2038,15 @@ class TourOwnerWaits(unittest.TestCase):
         calls = [{'tool': tool, 'why': tool, 'arguments': {}}] if tool else []
         return {'tour_step': step, 'of': 5, 'goal': f'goal {step}', 'then': then, 'next_calls': calls}
 
+    def held(self, step):
+        """0.7.3's owner-wait plan (fix inbox #175): the step in hand, and what waits for the owner."""
+        return dict(self.plan(step, then=self.WHERE), goal=f'Waiting for your owner: ... Then: goal {step}',
+                    waiting_for_your_owner={'approval_id': 'va_0123456789ab', 'deal_id': 'vd_0123456789abcdef',
+                                            'kind': 'propose'})
+
     def test_a_step_waiting_for_the_owner_is_not_done(self):
-        owner = self.plan(None, then=self.WHERE)
-        ag = OwnerWaitTourAgent([self.plan(1, 'valun_propose'), owner, owner, self.plan(1, 'valun_deliver'), self.plan(1),
-                                 self.plan(2, 'valun_propose'), owner, self.plan(2, 'valun_review_delivery'),
+        ag = OwnerWaitTourAgent([self.plan(1, 'valun_propose'), self.held(1), self.held(1), self.plan(1, 'valun_deliver'),
+                                 self.plan(1), self.plan(2, 'valun_propose'), self.held(2), self.plan(2, 'valun_review_delivery'),
                                  self.plan('done', then='The tour is complete.')])
         lines = []
         r = sb.tour(None, yes=True, log=lines.append, agent=ag, poll_s=3)
@@ -1937,9 +2082,10 @@ class TourOwnerWaits(unittest.TestCase):
         self.assertEqual(r['steps'][-1]['tracker_totals'], {f"{'03' + '22' * 7}... -> you": 0})
 
     def test_a_tour_that_starts_while_the_owner_decides_names_no_step_done(self):
-        # an earlier run's offer still waits for the owner; a step that goes back (a deal ended) is not done either
-        owner = self.plan(None, then=self.WHERE)
-        ag = OwnerWaitTourAgent([owner, self.plan(3, 'valun_propose'), self.plan(2, 'valun_propose'), self.plan(3),
+        # an earlier run's offer still waits for the owner; a step that goes back (a deal ended) is not done either. The
+        # owner-wait plan names the step in hand since 0.7.3 (here 4, ahead of the step the tour then takes): it is
+        # announced only once the owner decided
+        ag = OwnerWaitTourAgent([self.held(4), self.plan(3, 'valun_propose'), self.plan(2, 'valun_propose'), self.plan(3),
                                  self.plan(4, 'valun_propose'), self.plan('done', then='The tour is complete.')])
         lines = []
         r = sb.tour(None, yes=True, log=lines.append, agent=ag, poll_s=3)
@@ -1948,6 +2094,25 @@ class TourOwnerWaits(unittest.TestCase):
                           '  ... wait', 'step 3 done. Your edges on the tracker: none', 'step 4 of 5: goal 4',
                           'step 4 done. Your edges on the tracker: none'])
         self.assertEqual([s['step'] for s in r['steps']], [3, 4])
+
+    def test_a_call_beside_an_owner_wait_is_made_and_a_done_plan_beside_one_ends_the_tour(self):
+        # 0.7.3 review (fix inbox #175): one of two held steps approved, the plan names the call to make now beside what
+        # still waits, and the tour makes it in that step; holdings that read done end the tour even while something
+        # that is not a tour step waits for the owner.
+        beside = dict(self.held(1), goal='goal 1', next_calls=[{'tool': 'valun_deliver', 'why': 'valun_deliver', 'arguments': {}}],
+                      then='Then deliver. Meanwhile, your owner must approve a commitment; tell them.')
+        ended = dict(self.plan('done', then='Nothing of the tour is left to do. ' + self.WHERE),
+                     goal='The tour is complete.', waiting_for_your_owner={'approval_id': 'va_0123456789ab',
+                                                                           'kind': 'guarantee_offer'})
+        ag = OwnerWaitTourAgent([self.plan(1, 'valun_respond'), self.held(1), beside, self.plan(2, 'valun_propose'), ended])
+        lines = []
+        r = sb.tour(None, yes=True, log=lines.append, agent=ag, poll_s=3)
+        self.assertEqual(ag.calls, ['valun_respond', 'valun_deliver', 'valun_propose'])
+        self.assertEqual([x for x in lines if x.startswith('step ')],
+                         ['step 1 of 5: goal 1', 'step 1 done. Your edges on the tracker: none', 'step 2 of 5: goal 2',
+                          'step 2 done. Your edges on the tracker: none'])
+        self.assertEqual(lines[-1], 'Nothing of the tour is left to do. ' + self.WHERE)
+        self.assertEqual((r['done'], [s['step'] for s in r['steps']]), (True, [1, 2]))
 
 
 class LyingTourClient(StepTourClient):
@@ -2150,7 +2315,7 @@ class AttemptsCommands(Cli):
         self.assertEqual(rc, 0, out)
         self.assertIn(f'deal {self.deal}', out)
         self.assertIn('#1 paying with the note of ', out)
-        self.assertIn('your claim 3 -> 1 PC', out)
+        self.assertIn('its total 3 -> 1 PC', out)
         self.assertIn('server id vt_0123456789abcdef: can still apply', out)
 
     def test_list_first_learns_what_the_owner_decided(self):
@@ -2173,7 +2338,7 @@ class AttemptsCommands(Cli):
         rc, out = self.run_cli('attempts', 'list')
         self.assertEqual(rc, 0, out)
         self.assertIn('not applied (the server held it for your owner, who rejected it in the owner console, and never sent '
-                      'it on). A payment through the same IOU at the same prior state can be signed now; your own IOU or any '
+                      'it on). A payment through the same note at the same prior state can be signed now; your own note or any '
                       f'other payment of this deal waits until after {va.free_after(self.T)}', out)
         self.assertEqual(self.disk()['transfer_attempts'][deal][0]['outcome'], 'not_applied')
 
@@ -2225,7 +2390,7 @@ class AttemptsCommands(Cli):
         w.set_edge(S_ID, M_ID, 1, ts + 1001, kind='setoff', ref='vs_0123456789abcdef', signature=sign_note(S, mk, 1, ts + 1001))
         rc, out = self.run_cli('attempts', 'list')
         self.assertEqual(rc, 0, out)
-        self.assertIn('#1 your credit note to ', out)
+        self.assertIn('#1 your note to ', out)
         self.assertIn('MAY HAVE APPLIED', out)
         with self.assertRaises(vc.ValunError) as e:
             self.client().complete(did)
@@ -2233,7 +2398,7 @@ class AttemptsCommands(Cli):
         rc, out = self.run_cli('attempts', 'resolve', did, '#1', '--not-applied', '--owner-token-file', self.token_file,
                                tty=True, answers=['y'])                # one confirmation: the server holds nothing here
         self.assertEqual(rc, 0, out)
-        self.assertIn('The server holds no payment attempt for a credit note', out)
+        self.assertIn('The server holds no payment attempt for a note', out)
         self.assertEqual(w.resolutions, [])
         self.assertIn('GET /pilot/v1/owner', w.requests())           # the owner token was checked
         self.assertEqual(self.disk()['transfer_attempts'][did][0]['outcome'], 'not_applied')
@@ -2279,7 +2444,7 @@ class AttemptsCommands(Cli):
         for state, why in (('void_rejected', 'your owner rejected it, before anyone else signed'),
                            ('cancelled', 'your client cancelled it while it collected signatures')):
             line, out = self.r22(state)
-            self.assertIn('your claim 3 -> 1 PC', line)
+            self.assertIn('its total 3 -> 1 PC', line)
             self.assertTrue(line.endswith(f': ended by the server ({state}: {why}), which says it never reached the tracker, '
                                           "so it did not apply; your client cannot check that on the tracker, so it still "
                                           'pays this deal no more by itself'), line)
@@ -2573,7 +2738,7 @@ class AttemptsCommands(Cli):
         self.write(disk)
         rc, out = self.run_cli('attempts', 'list')
         self.assertEqual(rc, 0, out)
-        self.assertIn('your claim 3 -> 2 PC', [x for x in out.splitlines() if 'MAY HAVE APPLIED' in x][0])
+        self.assertIn('its total 3 -> 2 PC', [x for x in out.splitlines() if 'MAY HAVE APPLIED' in x][0])
         self.assertIn('`valun --profile s attempts resolve DEAL ATTEMPT --applied`', out)    # FX3-PY: names the profile
         # double quotes, which cmd reads as PowerShell and bash do (the RC's review, R2-OTHER-4: cmd passed '#1' with its
         # single quotes, which the client refuses as no attempt). The list shows each attempt bare (#1), so the advice
@@ -2650,7 +2815,7 @@ class AttemptsCommands(Cli):
             rc, out = self.run_cli('attempts', 'resolve', did, '#1', '--not-applied', '--owner-token-file', self.token_file,
                                    tty=True)
         self.assertEqual(rc, 1, out)
-        self.assertIn('The server holds no payment attempt for a credit note', out)     # the local-only plan was shown
+        self.assertIn('The server holds no payment attempt for a note', out)     # the local-only plan was shown
         self.assertEqual([p for p, _n in self.asked], ['Resolve it? [y/N] '])           # one confirmation, as for a note
         self.assertEqual(json.loads(out.strip().splitlines()[-1])['error'], 'attempt_changed')
         self.assertNotIn('GET /pilot/v1/owner', w.requests()[self.asked[-1][1]:])      # no owner check after it
@@ -2788,7 +2953,7 @@ class NextHintsUnderUvx(Cli):
         self.assertIn(f'`valun --profile s enroll --server {SERVER}` (with an enrollment code) (with uvx: `{u} ...`).', out)
         # join stopped at enrolment: what it says to finish names the uvx command too
         self.world.fail['POST /pilot/v1/enroll'] = [vc.ValunError('rate_limited', 'too many requests; slow down', 429)]
-        rc, out = self.run_under(self.PREFIXES[0], lambda: self.run_cli('join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann',
+        rc, out = self.run_under(self.PREFIXES[0], lambda: self.run_cli('join', '--sandbox', '--approvals', 'console', '--handle', 'stranger', '--operator', 'Ann',
                                                                         '--server', SERVER, '--owner-token-file', self.token_file))
         self.assertEqual(rc, 1, out)
         self.assertIn(f'then run `{u} --profile s enroll --server {SERVER} --participant {S_ID}`.', out)
@@ -2893,7 +3058,7 @@ class OutputOnAnyConsole(Cli):
             return dict(r, participant_id=evil) if method == 'POST' and path.endswith('/join-sandbox') else r
         self.world.fail['POST /pilot/v1/enroll'] = [vc.ValunError('rate_limited', 'too many requests; slow down', 429)]
         with mock.patch.object(self.world, 'handle', answer):
-            rc, out = self.run_cli('join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann', '--server', SERVER,
+            rc, out = self.run_cli('join', '--sandbox', '--approvals', 'console', '--handle', 'stranger', '--operator', 'Ann', '--server', SERVER,
                                    '--owner-token-file', self.token_file)
         self.assertEqual(rc, 1, out)
         self.assertNotIn('\x1b', out)
@@ -3036,13 +3201,13 @@ class CodePageStdout(unittest.TestCase):
         self.finished(rcs, puts, out)
 
     def test_a_command_names_a_file_it_cannot_print_apart(self):
-        # Console approvals (join --sandbox's default) print the command that changes them, with the owner token file
-        rcs, puts, out, err = self.piped(['join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann', '--server',
-                                          SERVER])
+        # Ask approvals print the command that holds commitments in the console instead, with the owner token file
+        rcs, puts, out, err = self.piped(['join', '--sandbox', '--handle', 'stranger', '--operator', 'Ann', '--approvals',
+                                          'ask', '--server', SERVER])
         self.assertEqual(rcs, [0], out + err)
         if '名前' not in out:                    # the code page lacks it: FILE, and what FILE is
-            self.assertIn('config approvals MODE --owner-token-file FILE` (MODE: ask, client-prompt or none; FILE: the '
-                          'file holding your owner token).', out)
+            self.assertIn('config approvals console --owner-token-file FILE` (FILE: the file holding your owner token) '
+                          'lets your agent sign at once', out)
         for cmd in re.findall(r'`([^`]*)`', out):
             self.assertNotIn('\\u', cmd)
 

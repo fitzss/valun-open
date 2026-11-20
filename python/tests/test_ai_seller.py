@@ -44,7 +44,8 @@ class FakeValun:
     def accept(self, did, expected_terms_hash=None):
         self.calls.append(('accept', expected_terms_hash))
         if self.d.get('accept_fails'):
-            raise vc.ValunError('mandate_exceeded', 'over the limit')
+            code = self.d['accept_fails']
+            raise vc.ValunError(code if isinstance(code, str) else 'mandate_exceeded', 'over the limit')
 
     def deliver(self, did, content, title=''):
         self.calls.append(('deliver', content, title))
@@ -243,7 +244,7 @@ class Answering(unittest.TestCase):
         self.assertIn('model service failed', s.c.calls[0][1])
 
     def test_accept_failure_keeps_nothing_and_a_held_acceptance_delivers_later(self):
-        s = seller(summary_deal(accept_fails=True), FakeAI(OK))
+        s = seller(summary_deal(accept_fails='conflict'), FakeAI(OK))
         s.answer(ITEM)
         self.assertEqual([c[0] for c in s.c.calls], ['accept'])
         self.assertEqual(s.budget.s['pending'], {})
@@ -254,6 +255,61 @@ class Answering(unittest.TestCase):
         s.deliver(ITEM)                                  # once agreed, the inbox lists it to deliver: from the kept work
         self.assertEqual(s.c.calls[-1][1], s.c.calls[1][1])
         self.assertEqual(s.budget.s['pending'], {})
+
+
+class CreditLimit(unittest.TestCase):
+    """Fix inbox #170: house-reviewer's acceptances failed with mandate_exceeded (the notes it held were at its owner's
+    max_claims_total). It retried each pass with a new model call, and the sixth try declined the buyer's FIRST check
+    with "I do at most 6 checks a day for one buyer". Now it says what is true, once, and spends no more."""
+
+    def key(self, s, buyer='buyer-1', service='summary'):
+        return s.counted(buyer, service)
+
+    def test_its_credit_limit_declines_the_offer_at_once_and_says_why(self):
+        ai = FakeAI(OK)
+        s = seller(summary_deal(accept_fails='mandate_exceeded'), ai)
+        s.answer(ITEM)
+        self.assertEqual([c[0] for c in s.c.calls], ['accept', 'decline'])
+        reason = s.c.calls[-1][1]
+        self.assertEqual(reason, A.FULL_TEXT[:480])
+        self.assertIn('credit limit', reason)
+        self.assertIn('sandbox-exact', reason)
+        self.assertNotIn('a day for one buyer', reason)
+        self.assertEqual(s.budget.buyer_jobs(self.key(s)), 0, "the buyer's allowance is not used")
+        self.assertEqual(len(ai.runs), 1)
+
+    def test_while_full_the_next_offers_are_declined_before_any_model_call(self):
+        ai = FakeAI(OK)
+        s = seller(summary_deal(accept_fails='mandate_exceeded'), ai)
+        s.answer(ITEM)
+        s.c.d.pop('accept_fails')
+        s.c.calls.clear()
+        for n in range(8):                               # more than checks_per_buyer, from new buyers and the same one
+            s.answer({'deal_id': 'vd_' + str(n + 2) * 16, 'counterparty': f'buyer-{n % 3}'})
+        self.assertEqual(len(ai.runs), 1, 'no model call while full')
+        self.assertEqual({c[0] for c in s.c.calls}, {'decline'})
+        self.assertTrue(all(c[1] == A.FULL_TEXT[:480] for c in s.c.calls))
+
+    def test_after_the_wait_it_tries_again(self):
+        ai = FakeAI(OK)
+        s = seller(summary_deal(accept_fails='mandate_exceeded'), ai)
+        s.answer(ITEM)
+        s.c.d.pop('accept_fails')
+        s.full = (0, s.full[1])                         # FULL_RETRY_S has passed
+        s.answer({'deal_id': 'vd_' + '9' * 16, 'counterparty': 'buyer-2'})
+        self.assertEqual(len(ai.runs), 2)
+        self.assertIn('accept', [c[0] for c in s.c.calls[-3:]])
+
+    def test_other_accept_failures_use_no_allowance_and_end_after_attempts(self):
+        ai = FakeAI(OK)
+        s = seller(summary_deal(accept_fails='conflict'), ai)
+        for _ in range(A.ATTEMPTS):
+            s.answer(ITEM)
+        self.assertEqual(s.budget.buyer_jobs(self.key(s)), 0)
+        self.assertEqual(len(ai.runs), A.ATTEMPTS)
+        self.assertEqual(s.c.calls[-1][0], 'decline')
+        self.assertIn('could not accept your offer (conflict)', s.c.calls[-1][1])
+        self.assertIsNone(s.full, 'only its credit limit marks it full')
 
 
 class Recorder(vc.Client):

@@ -204,7 +204,7 @@ class Protocol(unittest.TestCase):
                       mcp.ASK_WITHOUT_FORMS.format(command='valun --profile p'))
         words = mcp.approval_cancelled('uvx --from valun==9.9.9 valun --profile p', 'https://valun.example/')
         self.assertIn('your owner can hold what you sign in the owner console (https://valun.example/pilot#owner) instead '
-                      '(your offers, acceptances and guarantee offers, and the IOU or payment at each delivery): `uvx --from '
+                      '(your offers, acceptances and guarantee offers, and the note or payment at each delivery): `uvx --from '
                       'valun==9.9.9 valun --profile p config approvals console --owner-token-file FILE`', words['what_this_means'])
         self.assertNotIn('every commitment', words['what_this_means'])
 

@@ -59,8 +59,8 @@ CLIENT_PROMPT_CAVEAT = ('This asks only in an app that confirms each tool call i
 # What console holds for the owner, and what it never holds, in the owner's words (the approval semantics of 2026-11-17,
 # verified on staging): join's console line, `valun config approvals console` and `valun console`.
 CONSOLE_HOLDS = ("your agent's offers and counter-offers, its acceptances (taking a job included), its guarantee offers, "
-                 'and the IOU or payment by transfer it signs when it accepts a delivery')
-CONSOLE_NEVER = ("honoring a guarantee call (your agent's own IOU, recorded at once), accepting, calling and releasing "
+                 'and the note or payment by transfer it signs when it accepts a delivery')
+CONSOLE_NEVER = ("honoring a guarantee call (your agent's own note, recorded at once), accepting, calling and releasing "
                  'guarantees, deliveries, declines, withdrawals and disputes, your agent loosening or clearing a limit it '
                  'recorded (never past your mandate), and the consents its client signs by itself')
 # What a decision leaves, as the server does it (lib/pilot/core.mjs decideApproval and decidePayByTransfer; agent.
@@ -69,28 +69,31 @@ CONSOLE_NEVER = ("honoring a guarantee call (your agent's own IOU, recorded at o
 # or payment by transfer was rejected waits until its timestamp + 1 h + 2 min (novation FALLBACK_MARGIN_MS).
 CONSOLE_DECIDES = ('Your agent has already signed each one; nothing of it binds anyone or reaches the tracker until you '
                    'approve. Approving signs nothing new: the server releases exactly what your agent signed. Rejecting '
-                   'does not unsign it: the server keeps the signed offer, acceptance or IOU on record, and a rejected '
-                   'IOU (a bound note, which your agent signs on the testnet) could still be recorded by the tracker '
+                   'does not unsign it: the server keeps the signed offer, acceptance or note on record, and a rejected '
+                   'note (a bound note, which your agent signs on the testnet) could still be recorded by the tracker '
                    'until an hour after your agent signed it, so paying that deal by transfer waits until 1 hour and 2 '
                    "minutes after your agent signed it (your agent's Valun client waits a minute longer than the time "
                    'the owner console shows, as a margin for clocks that differ). A rejected payment by transfer is the '
                    'exception: it is deleted, '
                    'its signatures included (the server keeps only their hashes), and your agent may pay again through '
-                   'the same IOU at once while that IOU is unchanged. Approve or reject a held IOU by the deadline its card '
-                   'shows, a minute before its hour at the tracker ends: an IOU still held when that hour ends is never '
+                   'the same note at once while that note is unchanged. Approve or reject a held note by the deadline its card '
+                   'shows, a minute before its hour at the tracker ends: a note still held when that hour ends is never '
                    'recorded and pays nothing, and a server whose card shows the hour itself as the deadline (one from '
-                   'before 2026-11-18) still sends an IOU approved after it, which then fails at the tracker and leaves '
+                   'before 2026-11-18) still sends a note approved after it, which then fails at the tracker and leaves '
                    'the delivery accepted, unpaid and no longer disputable. Decide a held payment by transfer within 20 '
                    'minutes of your agent signing it.')
-CONSOLE_DOC = 'https://valun.tech/start#approve'      # what console holds, approving, rejecting, the deadlines
+# What console holds, approving, rejecting, the deadlines: the joined server's own page, filled in by the same
+# .format(server=...) as the console's address in that line (fix inbox #176: 0.7.2 named https://valun.tech/start#approve
+# on any server; every Valun server serves /start#approve, the local one too).
+CONSOLE_DOC = '{server}/start#approve'
 JOIN_APPROVALS = {
     'ask': ('Approvals: ask. Before your agent signs a commitment (an offer, counter-offer or acceptance; accepting a '
-            'delivery with its IOU or a payment by transfer; a guarantee offer; honoring or releasing a guarantee; '
+            'delivery with its note or a payment by transfer; a guarantee offer; honoring or releasing a guarantee; '
             'loosening a limit it recorded) you are asked: in your MCP app by an approval form, or in this terminal for '
             '`{valun} call`. If you decline, nothing is signed. No interactive app has been verified with that form yet: '
             'where your app cannot show it nothing is signed, and `{valun} --profile {name} config approvals console '
             '--owner-token-file {token_file}`{token_note} lets your agent sign at once and holds its offers, acceptances and '
-            'guarantee offers, and the IOU or payment at each delivery, for you in the owner console '
+            'guarantee offers, and the note or payment at each delivery, for you in the owner console '
             '({server}/pilot#owner) instead (never an honor of a guarantee call or a consent).'),
     'client-prompt': ("Approvals: client-prompt. Your MCP app's own tool confirmation is the only approval: whatever it "
                       "lets run is signed at once; never 'always allow' the Valun signing tools. " + CLIENT_PROMPT_CAVEAT),
@@ -465,11 +468,66 @@ def _pending_context(pending):
 
 
 def default_approvals(sandbox):
-    """The approval mode a join uses when --approvals is not given (Fitz's decision of 2026-11-17, fix inbox #138):
-    console for a sandbox join, the first tester's path (the one run end to end with a real app; ask has been shown in
-    no interactive app, and a host that cannot show its form fails every commitment); ask for an invited join, as
-    before (the operator's own participants, whose owners choose)."""
-    return 'console' if sandbox else 'ask'
+    """The approval mode a join uses when --approvals is not given: None for a sandbox join, which asks whether a person
+    will approve (Fitz's decision of 2026-11-20, fix inbox #164 option 3: console, 0.7.2's default since #138, stalled
+    every step of an agent nobody watched, and an owner on another machine had no way to approve); ask for an invited
+    join, as before (the operator's own participants, whose owners choose)."""
+    return None if sandbox else 'ask'
+
+
+# The question a sandbox join that names no --approvals asks (fix inbox #164 option 3), and its answers. There is no
+# default: Enter alone chooses neither none (approvals given up by a keystroke) nor console (#164's stall).
+APPROVALS_QUESTION = ("Approvals: will a person approve this agent's commitments?\n"
+                      '  yes: console. Your agent signs at once, and the Valun server holds its offers, counter-offers, '
+                      'acceptances and guarantee offers, and the note or payment by transfer it signs when it accepts a '
+                      'delivery, until that person approves each in the owner console ({server}/pilot#owner). Nothing '
+                      'notifies them.\n'
+                      "  no: none. Nobody is asked: your agent signs on its own, within this self-serve participant's "
+                      'limits.')
+APPROVALS_PROMPT = 'Will a person approve? [yes/no]: '
+APPROVALS_ANSWERS = {'y': 'console', 'yes': 'console', 'n': 'none', 'no': 'none'}
+
+
+def _asks_approvals(args):
+    """Does this join ask whether a person will approve: a sandbox join that names no --approvals (fix inbox #164)."""
+    return bool(args.sandbox) and args.approvals is None
+
+
+def _ask_approvals(server):
+    """The approvals question, at a terminal (_person_at_terminal): 'console' for yes, 'none' for no, asked again until
+    the answer is one of them; None when its input ends (no one to answer: the refusal follows)."""
+    print(APPROVALS_QUESTION.format(server=server))
+    while True:
+        try:
+            answer = input(APPROVALS_PROMPT).strip().lower()
+        except EOFError:
+            print()
+            return None
+        if answer in APPROVALS_ANSWERS:
+            return APPROVALS_ANSWERS[answer]
+        print('Answer yes or no.')
+
+
+def _approvals_choices(args, server, handle, operator, lacking=False):
+    """The two joins a sandbox join with no --approvals names when it cannot ask (fix inbox #164): this join with
+    --approvals console and with --approvals none, as _join_command writes them."""
+    def run(mode):
+        a = argparse.Namespace(**vars(args))
+        a.approvals = a.approvals_given = mode
+        return _join_command(a, server, handle, operator, lacking=lacking)
+    return [f'  if a person will approve each one in the owner console ({server}/pilot#owner): {run("console")}',
+            f'  if nobody will (your agent signs on its own, within the self-serve limits): {run("none")}']
+
+
+def _approvals_not_asked(args, server, handle, operator, ended=False):
+    """A sandbox join that names no --approvals, with no terminal to ask in (stdin or stdout is not one), or whose input
+    ended at the question (ended: at a terminal, Ctrl+D, say): both joins to run instead. Nothing was sent. Exit 2, as
+    _join_not_asked."""
+    why = 'its input ended at the question' if ended else 'there is no terminal here to ask in'
+    print("Nothing was sent: a sandbox join that names no --approvals asks whether a person will approve your agent's "
+          f'commitments, and {why}. Run one of these{_with_uvx()}:')
+    print('\n'.join(_approvals_choices(args, server, handle, operator)))
+    return 2
 
 
 def default_owner_token_file(handle):
@@ -503,6 +561,12 @@ def _join_not_asked(args, server, lacks):
     put = ((['your own handle (public and permanent: 3 to 24 letters, digits, _ or -, starting with a letter)']
             if not args.handle else []) + (['your name (public: who controls this agent)'] if not args.operator else [])
            + (['the invite code on its input (one line)'] if 'the invite code' in lacks else []))
+    if _asks_approvals(args):           # the approvals question cannot be asked either (fix inbox #164)
+        print(f"Nothing was sent: this join needs {_words(lacks)} and whether a person will approve your agent's "
+              f'commitments, and there is no terminal here to ask for them. Run one of these{_with_uvx()}, with '
+              f'{_words(put)}:')
+        print('\n'.join(_approvals_choices(args, server, args.handle or 'YOUR-HANDLE', args.operator, lacking=True)))
+        return 2
     print(f"Nothing was sent: this join needs {_words(lacks)}, and there is no terminal here to ask for "
           f"{'it' if len(lacks) == 1 else 'them'}. Run {run}{_with_uvx()}, with {_words(put)}."
           + ('' if args.sandbox else f' No invite code? Join without one: `{_sandbox_join(args, server)}`.'))
@@ -525,7 +589,9 @@ def _enroll_not_asked(args, server, participant):
 
 def cmd_join(args):
     # The mode this join uses: --approvals as given (approvals_given; None when it is not), else the default for its
-    # kind (default_approvals). The commands join prints name --approvals only when it was given and is not the default.
+    # kind (default_approvals): ask for an invited join; a sandbox join asks whether a person will approve (below, fix
+    # inbox #164), and the answer is then this join's mode as if given. The commands join prints name --approvals only
+    # when it was given (or answered) and is not the default.
     args.approvals_given = args.approvals
     args.approvals = args.approvals or default_approvals(args.sandbox)
     store = _store(args)
@@ -555,7 +621,9 @@ def cmd_join(args):
         print(f'Joining refused before anything was sent: {refused} Then run this join again.')
         return 1
     lacks = _join_lacks(args)
-    if lacks and not _at_terminal():    # no one to ask: the command to run, with what it lacks
+    # No one to ask: the command to run, with what it lacks (and both approval modes, when the question below could
+    # not be asked either: refused before any prompt).
+    if lacks and (not _at_terminal() or (_asks_approvals(args) and not _person_at_terminal())):
         return _join_not_asked(args, server, lacks)
     if not args.sandbox and not args.invite_from_stdin:
         given = getattr(args, 'server', None)
@@ -576,6 +644,16 @@ def cmd_join(args):
               'example commands. Choose your own handle and operator name (both are public, and neither can change '
               'after you join), and join with them.')
         return 1
+    if _asks_approvals(args):
+        # Fix inbox #164 option 3: whether a person will approve, asked only of a person at a terminal (stdin and stdout
+        # both one); else, or when its input ends, both joins to run, and nothing is sent. The answer is recorded as if
+        # --approvals had been given: the mandate gets what that flag sends, and every command printed after this names it.
+        at_terminal = _person_at_terminal()
+        mode = _ask_approvals(server) if at_terminal else None
+        if mode is None:
+            return _approvals_not_asked(args, server, handle, operator, ended=at_terminal)
+        args.approvals = args.approvals_given = mode
+        args.approvals_answered = True
     refused = _token_file_refusal(args, server, handle, operator)
     if refused:                         # the owner token could not be written: it would end up on screen, or nowhere
         print(refused)
@@ -1142,14 +1220,15 @@ def _join_steps(args, store, c, j, server, handle, owner, step, key=None):
     print(JOIN_APPROVALS[args.approvals].format(server=server, per_deal=vc.amount_text(limits.get('max_issue_per_deal'), unit),
                                                 total=vc.amount_text(limits.get('max_issue_outstanding'), unit), valun=_valun(),
                                                 name=_profile(args), token_file=token_word, token_note=token_note))
-    if args.approvals == 'console' and getattr(args, 'approvals_given', args.approvals) is None:
-        print(f'  Console is what `join --sandbox` uses when --approvals is not given. To change it: `{_valun()} --profile '
-              f'{_profile(args)} config approvals MODE --owner-token-file {token_word}` (MODE: ask, client-prompt or none'
-              + ('; FILE: the file holding your owner token' if token_note else '') + ').')
+    if getattr(args, 'approvals_answered', False):      # the answer to the approvals question (fix inbox #164)
+        lead, other = (('You answered that a person will approve. If nobody will', 'none') if args.approvals == 'console'
+                       else ('You answered that nobody will approve. If a person will, in the owner console', 'console'))
+        print(f'  {lead}: `{_valun()} --profile {_profile(args)} config approvals {other} --owner-token-file {token_word}`'
+              + ('; FILE: the file holding your owner token' if token_note else '') + '.')
     finished, name, v = True, _profile(args), _valun()
     if circulating:
         print(f'Clearing: {clearing}. ' + ('Your Valun client signs set-offs that leave your net position unchanged, and '
-                                           'transfers of your own debt, by itself; ' if clearing == 'auto' else
+                                           'transfers of notes you issued to a new holder, by itself; ' if clearing == 'auto' else
                                            'set-offs are off in your owner mandate; ')
               + (f'it also accepts payments by transfer (notes your owner mandate accepts), and signs them in the '
                  f'background while `{v} --profile {name} mcp` (consent_loop on) or `{v} --profile {name} clearing watch` '
@@ -1554,12 +1633,12 @@ def _settle_enrolled(args, store, c, server, context):
     see = f'See `{v} --profile {name} policy show`; change it with `{v} --profile {name} config consents.<role> on|off`.'
     if settings and wrote and sandbox:
         lines.append('Settings, as a sandbox join writes them: your client signs set-offs that leave your net position '
-                     'unchanged, transfers of your own debt, and payments to you by transfer by itself, as far as your '
+                     'unchanged, transfers of notes you issued to a new holder, and payments to you by transfer by itself, as far as your '
                      f'owner mandate allows, and signs them in the background while `{v} --profile {name} mcp` (consent_loop '
                      f'on) or `{v} --profile {name} clearing watch` runs. ' + see)
     elif settings and wrote:
         lines.append('Settings, as a join writes them: your client signs set-offs that leave your net position unchanged '
-                     'and transfers of your own debt by itself, as far as your owner mandate allows; payments to you by '
+                     'and transfers of notes you issued to a new holder by itself, as far as your owner mandate allows; payments to you by '
                      'transfer are off until you turn them on. ' + see)
     elif settings:
         lines.append(f'Settings: the consent policy this profile had is kept. {see}')
@@ -1681,7 +1760,7 @@ def _console_words(mode):
                 'seconds while it is open.')
     return (f'Approvals: {mode}. The console holds only what your owner mandate holds, as the console shows it: your '
             "agent's offers, counter-offers, acceptances and guarantee offers priced above Ask me above, and, while Review "
-            'deliveries is on, the IOU or payment by transfer it signs when it accepts a delivery. Where valun set your '
+            'deliveries is on, the note or payment by transfer it signs when it accepts a delivery. Where valun set your '
             'mandate (at join, or when this profile left console approvals), Ask me above is your per-deal limit, so '
             'nothing waits there by its price; leaving console keeps Review deliveries on until you untick it there. '
             "There you also change your agent's limits, or revoke it.")
@@ -1985,11 +2064,16 @@ def _approvals_before_join(args, store):
     head = 'Approvals: not set yet (this profile has not joined).'
     if lost:
         again = _lost_args(args, lost)
+        if again.approvals is None:     # a sandbox join that named no --approvals asks again (fix inbox #164)
+            return (f"{head} The join in the FIX line below asks whether a person will approve your agent's commitments: "
+                    'console if one will, none if nobody will (with no terminal it refuses and prints both joins).')
         kind = 'a sandbox' if again.sandbox else 'an invited'
         return (f'{head} The join in the FIX line below sets them to {again.approvals}'
                 + ('' if again.approvals_given else f", {kind} join's default") + '.')
-    return (f'{head} A sandbox join uses console approvals unless --approvals says otherwise: your agent signs at once, '
-            f'and the Valun server holds {CONSOLE_HOLDS} for you in the owner console. A join with an invite uses ask: '
+    return (f"{head} A sandbox join asks whether a person will approve your agent's commitments: console if one will "
+            f'(your agent signs at once, and the Valun server holds {CONSOLE_HOLDS} for them in the owner console), none '
+            'if nobody will (it signs on its own within the self-serve limits); --approvals answers it beforehand. A join '
+            'with an invite uses ask: '
             'you are asked before your agent signs an offer, counter-offer or acceptance, accepts a delivery, offers, '
             'honors or releases a guarantee, or loosens a limit it recorded.')
 
@@ -2221,7 +2305,7 @@ def cmd_config(args):
             else:
                 print(f'Owner mandate updated: offers, counter-offers, acceptances and guarantee offers up to '
                       f'{vc.amount_text(cap, _unit(store))} no longer wait in the console.'
-                      + (' Accepted deliveries still wait for your review (review_deliveries is on): the IOU or payment by '
+                      + (' Accepted deliveries still wait for your review (review_deliveries is on): the note or payment by '
                          'transfer your agent signs when it accepts a delivery is held for you until you approve it. Untick '
                          f'Review deliveries in the owner console ({server}/pilot#owner) if you no longer want it.'
                          if m.get('review_deliveries') else ''))
@@ -2434,7 +2518,7 @@ def cmd_call(args):
                     'ask (pass them with --json-file FILE to be asked here)' if piped else
                     'no person is at this terminal') + '. The owner can '
                 f'run `{_valun()} --profile {name} config approvals console --owner-token-file FILE` (the agent then signs at '
-                'once, and its offers, acceptances and guarantee offers, and the IOU or payment at each delivery, wait for '
+                'once, and its offers, acceptances and guarantee offers, and the note or payment at each delivery, wait for '
                 f'the owner in the owner console; FILE: the file holding the owner token) or `{_valun()} --profile {name} '
                 'config approvals none`.')}))
             return 3
@@ -2601,7 +2685,7 @@ def cmd_policy(args):
                                                              f"{k} {','.join(map(str, v)) or '[]'}"
                                                              for k, v in p['owner_mandate'].items()))
     for role, flag, what in (('setoff', 'auto_clear', 'set-offs (net-neutral)'),
-                             ('as_issuer', 'novate_own_debt', 'transfers of your own debt'),
+                             ('as_issuer', 'novate_own_debt', 'transfers of notes you issued'),
                              ('as_new_creditor', 'accept_transfers', 'payments to you by transfer')):
         print(f"  {what}: {'signed by your client' if p[role] else 'not signed'} (local {_shown_value((local or {}).get(role) if isinstance(local, dict) else None)}, "
               f"owner {flag} {_shown_value(mandate.get(flag))})")
@@ -2654,12 +2738,12 @@ HELD_ENDED_OTHER = 'the server ended it as {state} before it reached the tracker
 # IOU of the deal acknowledging the same state of the pair (at most one of the two can apply); after a payment by
 # transfer, a transfer through the same IOU at the same prior state (the same-prior exemption). Anything else waits
 # until the attempt's timestamp + 1 h + 2 min (MAX_AGE_MS + FALLBACK_MARGIN_MS), or until its edge moves past it.
-HELD_ENDED_NEXT = {'note': ("A new IOU of this deal can be signed now, while the pair's IOU is unchanged; paying it by "
-                            'transfer waits until after {free} ({margin}), or until your client sees this IOU move past '
+HELD_ENDED_NEXT = {'note': ("A new note of this deal can be signed now, while the pair's note is unchanged; paying it by "
+                            'transfer waits until after {free} ({margin}), or until your client sees this note move past '
                             'it'),
-                   'transfer': ('A payment through the same IOU at the same prior state can be signed now; your own IOU '
+                   'transfer': ('A payment through the same note at the same prior state can be signed now; your own note '
                                 'or any other payment of this deal waits until after {free} ({margin}), or until your '
-                                'client sees that IOU move past it')}
+                                'client sees that note move past it')}
 HELD_ENDED = {'alive': 'not applied ({why}). {next}',
               'dead': 'did not apply ({why})'}
 
@@ -2678,10 +2762,10 @@ def _attempt_line(c, r):
     i, rcp = (r['edge'].split('>') + [''])[:2]
     when = datetime.fromtimestamp(r['timestamp'] / 1000, timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
     if r['route'] == 'note':
-        what = (f"your credit note to {_who_key(c, rcp)}: your debt {r['prior'] if r['prior'] is not None else '?'} -> "
+        what = (f"your note to {_who_key(c, rcp)}: its total {r['prior'] if r['prior'] is not None else '?'} -> "
                 f"{r['total']} {c.unit}")
     else:
-        what = (f"paying with the note of {_who_key(c, i)}: your claim {r['prior'] if r['prior'] is not None else '?'} -> "
+        what = (f"paying with the note of {_who_key(c, i)}: its total {r['prior'] if r['prior'] is not None else '?'} -> "
                 f"{r['total']} {c.unit}")
     sid = f", server id {r['attempt_id']}" if r.get('attempt_id') else ''
     held = r.get('server_ended') if isinstance(r.get('server_ended'), dict) else None
@@ -2693,8 +2777,8 @@ def _attempt_line(c, r):
         why = HELD_ENDED_WHY.get(held.get('state')) or HELD_ENDED_OTHER.format(state=_terminal_text(held.get('state'), 40))
         if r['route'] == 'note' and r['timestamp'] % 1000 != va.nv.BOUND_MS:
             # an ordinary note never expires (novation._expires): only its edge moving past it ends it
-            nxt = ("A new IOU of this deal can be signed now, while the pair's IOU is unchanged; paying it by transfer "
-                   'waits until your client sees this IOU move past it (an ordinary note has no maximum age)')
+            nxt = ("A new note of this deal can be signed now, while the pair's note is unchanged; paying it by transfer "
+                   'waits until your client sees this note move past it (an ordinary note has no maximum age)')
         else:
             nxt = HELD_ENDED_NEXT.get(r['route'], HELD_ENDED_NEXT['note']).format(free=va.free_after(r['timestamp']),
                                                                                  margin=va.MARGIN_WORDS)
@@ -2729,8 +2813,8 @@ def _edges_now(c):
 
 # Why a resolution changes only your client's records (Client.resolution_plan local), for `valun attempts resolve`.
 LOCAL_WHY = {
-    'note': 'The server holds no payment attempt for a credit note: only your client\'s records change (your owner token '
-            'is checked first, used once and not stored).',
+    'note': 'The server holds no payment attempt for a note you issued: only your client\'s records change (your owner '
+            'token is checked first, used once and not stored).',
     'no_circulation': 'This server offers no circulating credit, so only your client\'s records change (your owner token '
                       'is checked first, used once and not stored).',
     'no_server_id': "Your client did not record the server's id of this transfer (its request got no answer, or the "
@@ -2823,6 +2907,17 @@ def _at_terminal():
     try:
         return sys.stdin.isatty()
     except (AttributeError, ValueError):     # no stdin, or a closed one
+        return False
+
+
+def _person_at_terminal():
+    """Can a person read a question here and answer it: stdin and stdout both terminals, as `valun call`'s approval
+    prompt, `attempts resolve` and `sandbox tour` check (join's approvals question, fix inbox #164). A piped stdout (an
+    agent's tool, `| tee`) means nobody may see the question. A terminal is not proof of a person: an agent in a
+    pseudo-terminal can answer, and the answer is recorded as given."""
+    try:
+        return sys.stdin.isatty() and sys.stdout.isatty()
+    except (AttributeError, ValueError):     # no stdin or stdout, or a closed one
         return False
 
 
@@ -3055,7 +3150,7 @@ def cmd_sandbox(args):
         if console:
             print(f'Console approvals: the tour asks nothing here. What it signs for your agent waits for you in the owner '
                   f'console ({_server(args, store)}/pilot#owner; `{_console_command(args)}` opens it): its offers and '
-                  'acceptances, the IOUs it pays with (approve each by the deadline its card shows, within the hour), and '
+                  'acceptances, the notes it pays with (approve each by the deadline its card shows, within the hour), and '
                   'its payments by transfer (steps 2 and 5), which wait only 20 minutes before they end (the tour then '
                   'signs them again). Approve '
                   'each there when the tour says it waits, and the tour goes on by itself.', flush=True)
@@ -3215,7 +3310,7 @@ def cmd_card(args):
     except vc.ValunError:
         page = None
     print('Your budget card is public' + (f': {_terminal_text(page, 200)}' if isinstance(page, str) and page else '.'))
-    print("Anyone can read it (your agent's limits and objective, the room it has left, its public backing and its record) "
+    print("Anyone can read it (your agent's limits and objective, the room it has left, its public guarantees and its record) "
           'and check a payment against it. To hide it again: '
           f'`{_valun()} --profile {name} card unpublish --owner-token-file FILE` (FILE: the file holding your owner token).')
     return 0
@@ -3693,9 +3788,13 @@ def main(argv=None):
     j.add_argument('--server', help='the Valun server to join (default https://valun.tech, the public testnet; also '
                                     'VALUN_SERVER)')
     j.add_argument('--approvals', choices=APPROVAL_MODES, default=None, metavar='MODE',
-                   help='who decides before a commitment takes effect (default: console with --sandbox, ask without). '
+                   help='who decides before a commitment takes effect. With --sandbox and no --approvals, join asks '
+                        "whether a person will approve your agent's commitments (yes: console; no: none); with no "
+                        'terminal to ask in (stdin and stdout must both be one), it refuses before anything is sent and '
+                        'prints both commands. Without --sandbox the default is ask. A mode given here is used as it is, '
+                        'and nothing is asked. '
                         'console: your agent signs at once, and the Valun server holds its offers, counter-offers, '
-                        'acceptances and guarantee offers, and the IOU or payment by transfer it signs when it accepts a '
+                        'acceptances and guarantee offers, and the note or payment by transfer it signs when it accepts a '
                         'delivery, until you approve each in the owner console (`valun console` opens it); never an honor '
                         'of a guarantee call, a guarantee release, a consent, or your agent loosening a limit it recorded. '
                         'ask: your MCP app shows you an approval '
@@ -3709,7 +3808,7 @@ def main(argv=None):
                         'is active; on an open network (valun.tech) it deals with any agent, otherwise only with the '
                         'sandbox agents')
     j.add_argument('--clearing', choices=['auto', 'off'], default=None,
-                   help='circulating credit: let set-offs clear your cycles of debts (auto, the default) or not (off); sets '
+                   help='circulating credit: let set-offs clear your loops of notes (auto, the default) or not (off); sets '
                         "auto_clear in your owner mandate (when the server's features cannot be read, it is not set and "
                         'join exits 1; with off your client then signs no set-off by itself)')
     j.add_argument('--owner-token-file',
@@ -3775,8 +3874,8 @@ def main(argv=None):
     pf.add_argument('--wants', help='the work you pay other agents for ("" clears it)')
     pf.add_argument('--display-name', dest='display_name')
     pf.add_argument('--public-vouches', dest='public_vouches', choices=('on', 'off'),
-                    help='on: the guarantees between you and agents that also chose this are public on both cards (who backed '
-                         'whom, the cap, how calls were honored; never the creditor); off hides them again')
+                    help='on: the guarantees between you and agents that also chose this are public on both cards (who '
+                         'guaranteed whom, the cap, how calls were honored; never the creditor); off hides them again')
     pf.add_argument('--server')
     cd = sub.add_parser('card', help="budget cards: show one (yours by default), check a payer against one, or publish or "
                                      'hide yours (owner)', description=CARD_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -3858,7 +3957,7 @@ def main(argv=None):
     bu.add_argument('--text')
     bu.add_argument('--text-file')
     bu.add_argument('--pay-with', metavar='ISSUER',
-                    help='circulating credit: pay with a note you hold from ISSUER (handle or id) instead of your own credit note')
+                    help='circulating credit: pay with a note you hold from ISSUER (handle or id) instead of your own note')
     bu.add_argument('--server')
     ea = sbs.add_parser('earn', help='circulating credit: do a job for a sandbox agent (the welcome job, or text-stats) and get paid')
     ea.add_argument('--server')
@@ -3921,7 +4020,7 @@ GET /ledger names as yours, and those your records show you signed with), with t
 is the state your records confirm with an issuer signature that verifies (signed), or the state a set-off your client
 signed gave it, with your own signature on it verifying (netted). First your client brings its records up to date
 from this profile's own server, as valun_status does: GET /pilot/v1/edges with this agent's token, each state checked
-against its issuer's signature before it is recorded, nothing signed (an IOU approved in the owner console after your
+against its issuer's signature before it is recorded, nothing signed (a note approved in the owner console after your
 agent's session ended is then in them, not a false "differs"). --no-refresh reads your records as they are.
 Exit codes (the server-side anchor audit's, so one watcher reads both): 0 MATCH (with --mine: every edge proven),
 1 MISMATCH and nothing else, 2 nothing was compared (UNKNOWN, with its reason; a usage error, such as a profile that
@@ -3938,9 +4037,10 @@ the API's own token counts); set a hard spend limit on the key's workspace in th
   valun join --sandbox --handle my-seller --operator "YOUR NAME" --about "AI summaries and code reviews" --approvals none
   ANTHROPIC_API_KEY=... valun sell --services summary,code-review
 
-It runs unattended, so it needs an owner mandate that holds none of its acceptances (--approvals none above; a profile
-with console approvals, what `join --sandbox` uses from valun 0.7.2 unless --approvals says otherwise, holds every
-one): it refuses to start, before any model call, while Ask me above in the owner console is below its prices.
+It runs unattended, so it needs an owner mandate that holds none of its acceptances (--approvals none above; without
+it, `join --sandbox` asks whether a person will approve, and refuses where there is no terminal; a profile with console
+approvals holds every one): it refuses to start, before any model call, while Ask me above in the owner console is
+below its prices.
 
 Services, priced in nanoERG on the testnet: summary, rewrite, translate and explain 2000000 nanoERG (0.002 tERG) each,
 code-review 3000000 nanoERG (0.003 tERG), and check 2000000 nanoERG (0.002 tERG: does a delivery meet its terms? the
@@ -3950,7 +4050,7 @@ buyer pastes the terms and the work). A job costs roughly
 
 CARD_HELP = """Budget cards. An owner may publish its agent's budget card: the limits of its mandate (per deal, in total,
 the amount above which the owner approves, how many counterparties it may deal with), its objective and expiry, the room
-it has left, the guarantees that back it in public, and its record. Anyone can read a card and check a payment against it.
+it has left, the guarantees that cover it in public, and its record. Anyone can read a card and check a payment against it.
 
   valun card                       your agent's own card (or that it is not public)
   valun card WHO                   the card of WHO, a handle or participant id (no joined profile needed)

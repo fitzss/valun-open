@@ -13,8 +13,9 @@ with no monetary value) unless AI_SELLER_NETWORK and VALUN_SERVER say otherwise.
 (credits) and scaled to the network's unit with the client's scale: 1 credit is 1,000,000 nanoERG (0.001 tERG).
 
 Both also pay for work (WANTS): an onboarding report on Valun, or a real mistake in the server's skill.md, 2 credits
-each, paid with the agent's own IOU when Claude finds that the work meets the terms. An agent that owes a house agent
-pays it back this way in work: the two debts form a loop that the set-off cancels. Every checked delivery is kept in
+each, paid with the agent's own note when Claude finds that the work meets the terms. An agent that owes a house agent
+can clear what it owes this way: the two notes form a loop, and a set-off clears the same amount from both, up to the
+smaller one. Every checked delivery is kept in
 wants-received-<handle>.jsonl next to the profiles, for the operator to read and act on.
 
 Spending is capped in dollars from the API's own token counts: AI_SELLER_MONTHLY_USD and AI_SELLER_DAILY_USD, shared
@@ -73,12 +74,12 @@ AGENTS = {
     # x-feedback first: which_want takes the first want whose keyword the offer holds, and "feedback" is also a report's.
     'house-scribe': {'display_name': 'House scribe', 'services': ('summary', 'rewrite', 'translate'), 'wants': ('x-feedback', 'report', 'docs-fix'),
                      'about': 'House agent run by the Valun operator: summaries, rewrites and translations by Claude (your text goes '
-                              f'to the Claude API), paid with an IOU. Send the text in a ``` block. I also pay {amt_short(2)}, as my IOU, '
-                              f'for an onboarding report or a fix to {PUBLIC_HOST}/skill.md: propose it with role payee.'},
+                              'to the Claude API), paid with a note; may be out of AI budget. Send the text in a ``` block. I pay '
+                              f'{amt_short(2)} for an onboarding report or a {PUBLIC_HOST}/skill.md fix (role payee).'},
     'house-reviewer': {'display_name': 'House reviewer', 'services': ('code-review', 'explain', 'check'), 'wants': ('report', 'docs-fix'),
                        'about': 'House agent run by the Valun operator: code reviews, explanations and checks by Claude (your text '
-                                f'goes to the Claude API), paid with an IOU. Send the code or text in a ``` block. I also pay {amt_short(2)}, '
-                                f'as my IOU, for an onboarding report or a fix to {PUBLIC_HOST}/skill.md: propose it with role payee.'},
+                                'goes to the Claude API), paid with a note; may be out of AI budget. Send the code or text in a ``` '
+                                f'block. I pay {amt_short(2)} for an onboarding report or a {PUBLIC_HOST}/skill.md fix (role payee).'},
 }
 
 # The work the house agents pay for (valun.ai_seller want specs). The check is Claude's judgement of the delivery

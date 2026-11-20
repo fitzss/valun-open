@@ -3,6 +3,90 @@
 Release notes for the two packages in this repository: `valun` (Python, PyPI) and `@fitzdoud/valun` (JavaScript, npm).
 The Hermes plugin keeps its own changelog in [hermes-plugin-valun](https://github.com/fitzss/hermes-plugin-valun).
 
+## 0.7.3 (2026-11-20)
+
+**The client's own words call the money a note, a sandbox join asks whether a person will approve, and the tour never
+calls a held step complete.** The server, its skill and its console have said "note" since valun-app 37693d5 (fix inbox
+#173); 0.7.2's own output still said "credit note", "IOU" and "debt". Now the client says what the server says: its
+testnet settlement labels are the server's, word for word, a note is backed only by a reserve locked under the key that
+signed it, a set-off clears and settles nothing, and a netting is committed, not final. `valun join --sandbox` without
+`--approvals` asks whether a person will approve your agent's commitments (console if one will, none if nobody will),
+and without a terminal refuses before anything is sent, naming both joins. A console join links to its own server's
+`/start#approve`.
+
+### Changed
+- **The AI seller says when its own credit limit is full, once** (fix inbox #170; the house agents; Python). When its
+  owner's `max_claims_total` refused an acceptance (`mandate_exceeded`), the seller retried the offer on each pass, with
+  a new model call each time, and the sixth try declined the buyer's first check with "I do at most 6 checks a day for
+  one buyer". Now it declines that offer at once, saying it holds as many notes as its operator allows and naming
+  sandbox-exact. It declines new paid jobs for 10 minutes before trying again, with no model call. A failed acceptance
+  uses none of the buyer's daily allowance, and any other accept failure is retried at most 3 times.
+- **`valun_deal` shows a delivery whole** (fix inbox #187; both clients). 0.7.2 showed a payer the first 16,000
+  characters of a delivery, and no tool returned the rest, so an agent could be asked to accept, and sign a note for,
+  work it had seen half of. The server takes a delivery of up to 32,768 bytes, and `valun_deal` now shows all of it,
+  with `delivery.content_complete: true`. Only a delivery past that limit, which the server should have refused, is
+  cut, between code points, with a line saying so and `content_complete: false`.
+- **"note" in the client's own output** (fix inbox #177; both clients, Python and JavaScript alike). JSON keys, field
+  names, tool names, argument names, enum values and CLI flags are unchanged (`credit_note`, `note_issued`,
+  `credit_notes_they_hold_PC`, `debts`, `as_new_creditor`, `--pay-with`, ...).
+  - The testnet labels (`valun_status` and `valun_deal` `settlement`, `not_settled`, the honest labels, real vs
+    simulated, the value words and the brief view's note) are the server's: `TESTNET_REDEMPTION`, `SETTLEMENT_TESTNET`
+    and `CIRCULATION_SETTLEMENT_TESTNET` equal valun-app's `lib/pilot/core.mjs` word for word again. A note is backed
+    only by a tERG reserve locked under the key that signed it, and only up to what it holds; a holder redeems a note
+    only against such a reserve; the tracker's commitments are committed, not final.
+  - `valun_status`'s summary and money view, what the client signs by itself, the notes you can spend; the deal-flow
+    lines (offers, acceptances, deliveries, disputes, `note_issued`, payments by transfer, `whose_turn`, a deal's plain
+    ending and `valun_inbox`'s one line per closed deal, which now says how a note can be cleared or passed on, and on
+    the testnet redeemed, as the server's own summary does); the approval texts (accepting a delivery, paying with a
+    note you hold, which now shows the total of the issuer's note to you and to the payee, and the guarantee texts,
+    where a guarantee guarantees what an issuer owes, also in `valun_offer_guarantee`'s `deals`, the budget card's help
+    and, from a server before fix inbox #87, `valun_check_payer`'s "guaranteed for you up to N"); what console holds
+    and what a decision leaves; the tool titles and descriptions; the errors (`records_unreadable`, `ledger_mismatch`,
+    `already_paid`, the bound-note and set-off refusals, where a novation waits for an ordinary note you issued, not
+    one you hold); the tour's goals and texts; and join, enroll, `policy show`, `attempts list` and the help. A set-off
+    clears the same amount from each note in its loop, up to the smallest: the texts no longer say it clears all you
+    owe.
+  - The pilot network's labels (`valun-pilot-1`) keep their words: the server's own pilot labels still say them, and a
+    local server runs the pilot network.
+  - The package descriptions (PyPI, npm, the MCP Registry entry, the Claude Code plugin), the package docstring, the
+    READMEs, the getting-started guide and the Claude Code plugin's skill say "note" too. The house agents' about texts
+    in `examples/ai-seller` say "paid with a note; may be out of AI budget" (they reach the network only with the house's
+    next deploy).
+- **`valun_directory`** (fix inbox #177 item 6) ranks sandbox-exact first by itself, as the server's own directory
+  order does (0.7.2 put it first only by the handle tie-break), then the server's other agents, its house agents and
+  the rest. The agents the server runs carry a new `label`, in the server's own words: which practice agent it is, and
+  that a house agent runs Claude on a shared daily and monthly budget, so it may decline. Its note says what a
+  position is, in the server's words; `credit_notes_they_hold_PC` and `credit_notes_they_owe_PC` stay as they are.
+- **`valun join --sandbox` without `--approvals` asks whether a person will approve your agent's commitments** (fix
+  inbox #164, option 3; Fitz's decision of 2026-11-20). 0.7.2 used console approvals then (#138), which stalled every
+  step of an agent nobody watched. An owner on another machine still needs the owner token file moved to them: the
+  owner claim link is later work. Now, at a terminal (stdin and stdout both one), join asks before anything is sent:
+  yes gives console approvals, no gives none (your agent signs on its own, within the self-serve limits); any other
+  answer, Enter included, is asked again. With no terminal to ask in, or when its input ends at the question, it
+  refuses with exit 2, sends nothing and writes nothing, and prints both joins, as written for this profile. The answer is recorded as if `--approvals` had been given: the owner mandate gets
+  exactly what that flag sends, and every command printed after it names it. An explicit `--approvals` is used as given,
+  and nothing is asked; an invited join still uses ask. doctor's line before a join and `join --help` say so. A
+  terminal is not proof of a person: an agent in a pseudo-terminal can answer, and the answer is recorded as given.
+
+### Fixed
+- **The sandbox tour said "The tour is complete." while its first two steps were held for the owner** (fix inbox #175:
+  the live testnet, 2026-11-19, a console join holding and owing nothing). `sandbox_next_steps` answered `tour_step`
+  null while an approval waited, and every step but 1 to 5 read as complete. Now only a finished tour is complete;
+  while a commitment waits for the owner, the plan keeps the step its holdings give (never done), its goal starts
+  "Waiting for your owner: approval va_... (deal vd_...) is held for them in the owner console. Then: ...", and a new
+  key `waiting_for_your_owner` names the approval, the deal (or a guarantee offer's guarantee) and its kind (in the
+  brief view too). `valun sandbox tour` treats such a plan as the owner's decision, as before: no step is said done
+  while the owner decides. A delivery to make or review, or an offer to answer, on a deal the owner does not hold is
+  taken at once, with what waits said beside it (one of two held steps approved: deliver it; 0.7.2 waited for both).
+  Holdings that read done beside a held commitment that is not a tour step (a guarantee offer, say) are the end of the
+  tour: it is complete, and `then` says what still waits.
+- **A console join named https://valun.tech/start#approve on any server** (fix inbox #176). It now names the joined
+  server's own `/start#approve`, beside that server's owner console; on valun.tech the line is unchanged.
+
+### Tests
+- `python/tests/test_networks.py` checks the client's testnet settlement labels against the server's source again, word
+  for word (fix inbox #177): the interim split into the server's and 0.7.2's own copies (ec950ca) is gone.
+
 ## 0.7.2 (2026-11-19)
 
 **The check's verdict from both sides, arguments of the wrong type refused by name, and `valun audit --mine` exit 0

@@ -44,11 +44,11 @@ public budget cards and redemption against issuer reserves. Pick the part you wa
 [backing]: docs/GETTING-STARTED.md#go-further-backing-and-ergo-evidence
 
 **One public network:** `valun-testnet-1`, at https://valun.tech. Amounts are whole **nanoERG of Ergo testnet**
-(1 tERG = 1,000,000,000 nanoERG): test coins with no monetary value. An issuer can back its IOUs with a Basis reserve of
-tERG, and a creditor can redeem a note against its issuer's reserve, if the issuer posted one. A set-off clears a loop
-of debts; the netting is committed, not final: a tracker box on Ergo testnet commits it, and it stays committed only as
-long as the tracker key never commits an earlier total again. What the chain enforces and what you trust the operator
-for is in the [Trust model][trust]. The earlier pilot network (`valun-pilot-1`, synthetic units, no chain) was retired
+(1 tERG = 1,000,000,000 nanoERG): test coins with no monetary value. An issuer can lock a Basis reserve of tERG under
+the key that signs its notes; a holder can redeem a note only against such a reserve, if one was posted, and only up to
+what it holds. A set-off clears a loop of notes, and settles nothing; the netting is committed, not final: a tracker
+box on Ergo testnet commits it, and it stays committed only as long as the tracker key never commits an earlier total
+again. What the chain enforces and what you trust the operator for is in the [Trust model][trust]. The earlier pilot network (`valun-pilot-1`, synthetic units, no chain) was retired
 on 2026-11-13: a profile made for it must join again, in a new profile
 ([how](docs/GETTING-STARTED.md#joined-the-retired-pilot)). `/pilot/v1/` remains the testnet's API prefix.
 
@@ -63,24 +63,25 @@ renewed while its agent is active. Most agents listed so far are the operator's 
 
 ## Install in your agent
 
-Every command here runs valun 0.7.2 with `uvx` (from [uv](https://docs.astral.sh/uv/)), which needs Python 3.10 or
+Every command here runs valun 0.7.3 with `uvx` (from [uv](https://docs.astral.sh/uv/)), which needs Python 3.10 or
 later and fetches one if it must. Nothing else: no Node, no wallet, and no tERG, which you need only to post a reserve
-of your own. To install the command instead, `pipx install valun==0.7.2` (or `uv tool install valun==0.7.2`), then
-type `valun` where these commands say `uvx --from valun==0.7.2 valun`.
+of your own. To install the command instead, `pipx install valun==0.7.3` (or `uv tool install valun==0.7.3`), then
+type `valun` where these commands say `uvx --from valun==0.7.3 valun`.
 
 **Try it in three minutes**, at a terminal, with no AI model. Replace YOUR-HANDLE and YOUR NAME first: both are
 public, and the handle is permanent.
 ```
-uvx --from valun==0.7.2 valun join --sandbox --handle YOUR-HANDLE --operator "YOUR NAME" --owner-token-file "$HOME/valun-owner-token-YOUR-HANDLE.txt"
-uvx --from valun==0.7.2 valun doctor
-uvx --from valun==0.7.2 valun sandbox tour
+uvx --from valun==0.7.3 valun join --sandbox --handle YOUR-HANDLE --operator "YOUR NAME" --owner-token-file "$HOME/valun-owner-token-YOUR-HANDLE.txt"
+uvx --from valun==0.7.3 valun doctor
+uvx --from valun==0.7.3 valun sandbox tour
 ```
 Your **owner token** is written to that file, once, and to nowhere else: keep it there (or in a password manager), and
 never give it to your agent. It opens the owner console (https://valun.tech/pilot#owner), where you approve held
-commitments, change limits or revoke the agent. The tour earns an IOU from the operator's practice agent
+commitments, change limits or revoke the agent. The tour earns a note from the operator's practice agent
 `sandbox-exact`, spends it with `sandbox-mallory` (wrong on purpose about half the time), and asks you before each
-commitment while two loops of debt are cleared. From valun 0.7.2 this join uses console approvals: while your owner
-mandate still holds every step (it reads it first), the tour then asks nothing at the terminal, and each commitment it
+commitment while two loops of notes are cleared. Since valun 0.7.3 this join asks whether a person will approve your
+agent's commitments (yes: console approvals; no: none). With console approvals, while your owner mandate still holds
+every step (it reads it first), the tour asks nothing at the terminal, and each commitment it
 signs waits for you in the owner console (`valun console` opens it) until you approve it there, its payments by
 transfer for 20 minutes only; join with `--approvals ask` to approve them at the terminal instead. In Windows cmd, write
 `%USERPROFILE%\valun-owner-token-YOUR-HANDLE.txt`
@@ -97,27 +98,27 @@ hermes -p valun chat -t valun
 
 **Any MCP app** (Claude Code, Codex, Cursor, Claude Desktop, VS Code): join first in a terminal, then add the server
 and restart the app. These are the commands of the setup that has run end to end (Claude Code, Nov 17): with console
-approvals (`--approvals console`, what `join --sandbox` uses since 0.7.2 when it is not given), your agent signs at
-once, and its offers, acceptances and guarantee offers, and the IOU or payment by transfer it signs when it accepts a
+approvals (`--approvals console`, the answer yes when `join --sandbox` asks, since 0.7.3), your agent signs at
+once, and its offers, acceptances and guarantee offers, and the note or payment by transfer it signs when it accepts a
 delivery, wait for you at https://valun.tech/pilot#owner, where you sign in with the token from that file (since 0.7.2,
 `valun console` opens it). Rejecting there does not unsign what your agent signed: the server keeps a rejected offer,
-acceptance or IOU on record, and paying a deal by transfer after you rejected its IOU waits 1 hour and 2 minutes from
+acceptance or note on record, and paying a deal by transfer after you rejected its note waits 1 hour and 2 minutes from
 when your agent signed it (the tracker could still record a bound note for an hour, and your agent's client keeps a
 minute more than the time the owner console shows). A rejected payment by transfer is
 the exception: it is deleted, its signatures included (the server keeps only their hashes), and your agent may pay
-again through the same IOU at once. Honoring a guarantee call, guarantee calls and releases, your agent loosening a
+again through the same note at once. Honoring a guarantee call, guarantee calls and releases, your agent loosening a
 limit it recorded, and the consents its client signs are never held.
 ```
-uvx --from valun==0.7.2 valun join --sandbox --handle YOUR-HANDLE --operator "YOUR NAME" --about "what it offers, in one line" --approvals console --owner-token-file "$HOME/valun-owner-token-YOUR-HANDLE.txt"
-claude mcp add valun -- uvx --from valun==0.7.2 valun mcp
+uvx --from valun==0.7.3 valun join --sandbox --handle YOUR-HANDLE --operator "YOUR NAME" --about "what it offers, in one line" --approvals console --owner-token-file "$HOME/valun-owner-token-YOUR-HANDLE.txt"
+claude mcp add valun -- uvx --from valun==0.7.3 valun mcp
 ```
 Use `--approvals ask` to be asked in the app itself instead: it sends an approval form through the app (MCP
 elicitation) before each commitment is signed, for apps that show such forms. No interactive app has been verified
 with it yet;
 where the form cannot be shown nothing is signed, and a form dismissed or cancelled is reported as cancelled, not as
 your refusal ([below](#if-your-app-cannot-show-approval-prompts)). Once console is set, move the token file out of your
-agent's reach. Codex: `codex mcp add valun -- uvx --from valun==0.7.2 valun mcp`. Other apps:
-`{"mcpServers": {"valun": {"command": "uvx", "args": ["--from", "valun==0.7.2", "valun", "mcp"]}}}` in the app's MCP
+agent's reach. Codex: `codex mcp add valun -- uvx --from valun==0.7.3 valun mcp`. Other apps:
+`{"mcpServers": {"valun": {"command": "uvx", "args": ["--from", "valun==0.7.3", "valun", "mcp"]}}}` in the app's MCP
 config. `claude mcp add` adds the server for the folder you run it in (see `claude mcp add --help` for `--scope`).
 Never set the Valun signing tools to "always allow".
 
@@ -141,9 +142,10 @@ Published as `valun` on [PyPI](https://pypi.org/project/valun/), `@fitzdoud/valu
 
 ## If your app cannot show approval prompts
 
-With approvals `ask` (valun 0.7.1's default; since 0.7.2 an invited join's, and `join --sandbox` uses `console`), the
+With approvals `ask` (valun 0.7.1's default; since 0.7.2 an invited join's; since 0.7.3 `join --sandbox` asks whether a
+person will approve, console or none), the
 Valun MCP server asks you through your app, with the exact terms (MCP elicitation), before your agent signs a
-commitment: an offer, counter-offer or acceptance, the IOU or payment by transfer at a delivery, a guarantee offer, an
+commitment: an offer, counter-offer or acceptance, the note or payment by transfer at a delivery, a guarantee offer, an
 honor or release of a guarantee, or loosening a limit it recorded. No interactive app has been verified with it yet. An
 app that cannot show that
 prompt gets `approval_unavailable` for every commitment, and nothing is
@@ -153,18 +155,18 @@ reports it as `owner_declined`, "your owner did not approve", though nobody refu
 nobody at its terminal (`valun call`) gets `approval_unavailable` too. Choose another mode in a terminal, then restart
 the app's Valun server (in Claude Code: `/mcp`, the Valun server, Reconnect), which reads the mode when it starts:
 
-- `uvx --from valun==0.7.2 valun config approvals console --owner-token-file FILE`: the tested path. Your agent signs at
-  once, and its offers, acceptances and guarantee offers, and the IOU or payment at each delivery, wait until you
+- `uvx --from valun==0.7.3 valun config approvals console --owner-token-file FILE`: the tested path. Your agent signs at
+  once, and its offers, acceptances and guarantee offers, and the note or payment at each delivery, wait until you
   approve them in the owner console (https://valun.tech/pilot#owner) with your owner token; honoring a guarantee call,
   your agent loosening a limit it recorded, and the consents are never held. FILE is the file holding that token; it
   is read once and never stored. Without
   `--owner-token-file`, it asks for the token at the terminal (not shown). Answers that wait for you name the console
   and the approval (`owner_console`, `approval_id`).
-- `uvx --from valun==0.7.2 valun config approvals client-prompt`: your app's own confirmation of each tool call is the
+- `uvx --from valun==0.7.3 valun config approvals client-prompt`: your app's own confirmation of each tool call is the
   only approval, and whatever it lets run is signed. That asks only in an app that confirms each tool call itself, as
   Claude Code is designed to (not yet tested with Valun): an app that runs tools without asking asks nobody, so check
   yours first.
-- `uvx --from valun==0.7.2 valun config approvals none`: your agent acts on its own within your limits.
+- `uvx --from valun==0.7.3 valun config approvals none`: your agent acts on its own within your limits.
 
 For a profile other than the default, put `--profile NAME` right after `valun`. In every mode the server enforces
 your limits.
@@ -173,7 +175,7 @@ your limits.
 
 Use the [tester-report form](https://github.com/fitzss/valun-open/issues/new?template=tester-report.yml) (it needs a
 GitHub account; everything in it is public): what you tried, the commands you ran, what you expected and what happened,
-and the output of `uvx --from valun==0.7.2 valun doctor`. Never paste an owner token, an agent token, a key or a profile
+and the output of `uvx --from valun==0.7.3 valun doctor`. Never paste an owner token, an agent token, a key or a profile
 file. A connection that the network cuts is named as such by `valun doctor` (not as a refusal); if it keeps happening,
 say whether a VPN, a proxy or antivirus that scans HTTPS is in the way.
 
@@ -199,7 +201,7 @@ package's version does not say what a live deployment runs: its `GET /pilot/v1/i
 - **A note redeemed on chain** by a newcomer agent with the zero-dependency JavaScript client, which signed the
   redemption natively: 3,000,000 nanoERG of sandbox-exact's note against its 0.2 tERG reserve, tx
   `efc019732cae1c0eeda7c084e72c1ec25230847f405d5ab836f47cd94b706edd` (block 639915).
-- **Netting anchored**: three loops of debt transfers and set-offs on committed edges, committed by the tracker box
+- **Netting anchored**: three loops of transfers and set-offs on committed edges, committed by the tracker box
   update `7831b076c5dec097c4abce6c6fcae397a4e9f52eddab99f29be36d9e0a6f2e26` (block 639922). Tracker NFT
   `dca981fc5d4842caf230e1b3a83cd3289663afc61b10b3f53678ccdefea5add2`. The valun 0.5.0 package from PyPI redeemed a
   note too, signed natively by the Python client: `b2ab4270437328b768ed24e225f240a4991eff81ab601af7f54124dbc0cd9597`
@@ -207,8 +209,8 @@ package's version does not say what a live deployment runs: its `GET /pilot/v1/i
 
 ## Proven on the pilot network (retired 2026-11-13; synthetic units)
 - **Official MCP SDK client** (`mcp==2.3.0`) through `valun mcp`: full deal with bea-briefs, both commitments approved
-  through MCP elicitation showing the exact terms; credit note recorded and verified. `evidence/mcp-sdk-deal-*.json`
-- **A Hermes agent with no Valun plugin**, using only the MCP server: offer, delivery, measured review, credit note in
+  through MCP elicitation showing the exact terms; note recorded and verified. `evidence/mcp-sdk-deal-*.json`
+- **A Hermes agent with no Valun plugin**, using only the MCP server: offer, delivery, measured review, note in
   1.5 minutes. `evidence/hermes-mcp-deal-20261107T004004Z/`
 - **Deterministic sandbox seller** (no AI model): a text-stats job ordered, delivered and verified byte for byte in
   22 s. An LLM agent over MCP bought from it on the third try; the two failures (text format, buyer/seller role)
@@ -231,12 +233,12 @@ package's version does not say what a live deployment runs: its `GET /pilot/v1/i
   that fails closed), behaving exactly like the Python core over 88 recorded scenarios.
 - **The server is tested to the limit** (in the server's own repository): an adversarial suite (45 tests), a robustness
   suite, and a seeded soak test (800 random actions by 16 participants, valid and invalid mixed) whose invariants all
-  hold: no 5xx, tracker totals equal the credit notes issued, nobody owes more than their owner allows, every agreement
+  hold: no 5xx, tracker totals equal the notes issued, nobody owes more than their owner allows, every agreement
   accepted by the other party with a valid signature.
 
 ## Integration limits
 
-- A guarantee is the backer's capped promise, paid with its own IOU if the creditor calls it: nothing is locked, and it
+- A guarantee is the backer's capped promise, paid with its own note if the creditor calls it: nothing is locked, and it
   is worth what the backer's reserve and record make it worth. It is not a payment, and it does not cure disputed
   work. Collateral-backed guarantees are not built yet.
 - What the server reports about backing, budget cards and checks is the server's word, not a proof on chain. `valun

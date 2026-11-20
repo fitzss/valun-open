@@ -44,7 +44,7 @@ ME_VIEW = {'participant': {'id': ME, 'handle': 'alice', 'status': 'active'}, 'ma
            'position': {'claims_held': 0, 'owes': 9, 'net': -9}, 'authority': {}}
 INFO = {'network': vc.NETWORK, 'protocol': vc.PROTOCOL, 'unit': 'PC'}
 NOT_PUBLIC = (404, {'error': 'card_not_public', 'message': "this participant's owner has not published its budget card"})
-SUMMARY_ACCEPT = 'Accept: within its budget (31 of 40 left), backed for you up to 3.'
+SUMMARY_ACCEPT = 'Accept: within its budget (31 of 40 left), guaranteed for you up to 3.'
 SUMMARY_ASK = 'Ask the payer\'s owner: within its budget (13 of 40 left), its owner approves each IOU above 25.'
 SUMMARY_DECLINE = 'Decline: above its limit per deal (30), more than the room it has left (31).'
 SUMMARY_NOT_PUBLIC = ("Unknown: bob's owner has not published a budget card, so its budget cannot be checked; decide from its "
@@ -270,9 +270,9 @@ class CheckPayerTool(Card):
         self.assertNotIn('error', r)
 
     def test_the_summary_without_reasons_and_for_a_verdict_this_client_does_not_know(self):
-        self.assertEqual(va.check_summary({'verdict': 'accept', 'reasons': []}), "Accept: its owner's budget card allows this IOU.")
-        self.assertEqual(va.check_summary({'verdict': 'ask_owner'}), "Ask the payer\'s owner: the payer\'s owner approves an IOU this size before it binds.")
-        self.assertEqual(va.check_summary({'verdict': 'decline', 'reasons': None}), "Decline: its owner's budget card does not allow this IOU.")
+        self.assertEqual(va.check_summary({'verdict': 'accept', 'reasons': []}), "Accept: its owner's budget card allows this note.")
+        self.assertEqual(va.check_summary({'verdict': 'ask_owner'}), "Ask the payer\'s owner: the payer\'s owner approves a note this size before it binds.")
+        self.assertEqual(va.check_summary({'verdict': 'decline', 'reasons': None}), "Decline: its owner's budget card does not allow this note.")
         self.assertEqual(va.check_summary({'verdict': 'maybe', 'reasons': ['unsure']}), 'Unknown: unsure.')
         self.assertEqual(va.check_summary(None), 'Unknown: the server gave no verdict this client knows.')
         self.assertEqual(va.check_summary({'verdict': 'accept', 'reasons': [' within\nits budget.. ', 3, '', 'fine;']}),
@@ -280,13 +280,13 @@ class CheckPayerTool(Card):
 
     def test_the_summary_names_the_cover_only_when_it_is_shown_and_above_0(self):
         s = lambda verdict, covered: va.check_summary({'verdict': verdict, 'reasons': ['r'], 'cover': {'covered': covered}})   # noqa: E731
-        self.assertEqual(s('accept', 3), 'Accept: r, backed for you up to 3.')
-        self.assertEqual(s('ask_owner', 2), 'Ask the payer\'s owner: r, backed for you up to 2.')
+        self.assertEqual(s('accept', 3), 'Accept: r, guaranteed for you up to 3.')
+        self.assertEqual(s('ask_owner', 2), 'Ask the payer\'s owner: r, guaranteed for you up to 2.')
         for covered in (None, 0, -1, 2.5, True, '3', 2 ** 53):          # null is "not shown", never 0
             self.assertEqual(s('accept', covered), 'Accept: r.', covered)
         self.assertEqual(s('decline', 3), 'Decline: r.', 'a declined IOU would not be issued: its cover is not named')
         self.assertEqual(va.check_summary({'verdict': 'accept', 'cover': {'covered': 3}}),
-                         "Accept: its owner's budget card allows this IOU, backed for you up to 3.")
+                         "Accept: its owner's budget card allows this note, guaranteed for you up to 3.")
 
     def test_the_new_decline_rules_read_as_other_declines(self):
         route = f'GET /pilot/v1/participants/{BOB}/check?amount=%d&payee={ME}'
@@ -342,7 +342,7 @@ class CheckPayerTool(Card):
 
     def test_the_description_tells_the_model_when_to_run_it(self):
         d = schemas.CHECK_PAYER['description']
-        self.assertTrue(d.startswith('Run this before you accept an IOU (a credit note) from an agent you do not know'))
+        self.assertTrue(d.startswith('Run this before you accept a note from an agent you do not know'))
         self.assertIn('Read-only', d)
         testnet = schemas.for_network(schemas.TESTNET)[-1]
         self.assertEqual(testnet['name'], 'valun_check_payer')
@@ -804,7 +804,7 @@ class BothSides(CliCard):
         # payee's own reasons only when that side would not simply go ahead.
         old = names['old server: ask owner payee with cover']
         self.assertTrue(old['summary'].startswith('Accept: Within its budget'))
-        self.assertIn('by a backer not named here, backed for you up to 2000000. Your own side: Your own limits allow it. Your owner approves',
+        self.assertIn('by a backer not named here, guaranteed for you up to 2000000. Your own side: Your own limits allow it. Your owner approves',
                       old['summary'])
         self.assertNotIn('Your own side', names['old server: accept with cover']['summary'])
 
@@ -839,7 +839,7 @@ class BothSides(CliCard):
             self.assertEqual(va.check_summary(dict(v, payee_side={'verdict': 'accept', 'reasons': ['Your own limits allow it.',
                                                                                                     'Backed for you up to 3 by @erin.']})),
                              'Accept: Both sides allow it. Your own side: Your own limits allow it. Backed for you up to 3 by @erin.')
-        self.assertEqual(va.check_summary({'verdict': 'accept', 'reasons': ['r'], 'cover': {'covered': 3}}), 'Accept: r, backed for you up to 3.',
+        self.assertEqual(va.check_summary({'verdict': 'accept', 'reasons': ['r'], 'cover': {'covered': 3}}), 'Accept: r, guaranteed for you up to 3.',
                          'a server from before #87: the cover named by this client, as in 0.7.1')
         # your own side's accept: its reasons follow (the cover is among them); without reasons nothing is added
         v = {'verdict': 'accept', 'reasons': ['Both sides allow it.'], 'payer_side': BOTH}

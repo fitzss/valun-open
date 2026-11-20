@@ -978,8 +978,9 @@ class _Run:
             for p in self.pair(edge)[1]:
                 if p.get('kind') == 'note' and p.get('direction') == 'out' and p['timestamp'] % 1000 < RESERVED_MS[0] \
                         and p['timestamp'] > after:
-                    self.refuse('pending_unbound_note', 'you hold an unapplied ordinary credit note on this edge; a '
-                                                        'novation is signed only once it is settled either way')
+                    self.refuse('pending_unbound_note', 'an ordinary note you issued on this edge has not applied '
+                                                        'yet; a novation is signed only once it has applied or can '
+                                                        'no longer apply')
 
     def no_bound_note_restored(self, changes):
         """R12 extended, the client side of decision D-2 c: never sign a novation that sets an edge of mine (as issuer)
@@ -1001,7 +1002,7 @@ class _Run:
                         == (edge, b['total'], b['timestamp']):
                     continue
                 if b['prior'] == new_total:
-                    self.refuse('payment_attempt', 'this would bring your edge back to the prior a bound credit note of '
+                    self.refuse('payment_attempt', 'this would bring your edge back to the prior a bound note of '
                                                    'yours acknowledged, which could then still apply; it is signed only '
                                                    'once that note is past its maximum age')
 
@@ -1096,15 +1097,15 @@ def _bound(run, tpl):
             or not _text(me_id) or deal['payer']['id'] != me_id:
         run.refuse('deal_mismatch', 'the template is not for the deal, terms and delivery you are paying (as the payer)')
     if I != run.me:
-        run.refuse('not_my_edge', 'the template is not for a credit note from your key')
+        run.refuse('not_my_edge', 'the template is not for a note from your key')
     payee_now = run.ctx.get('payee_current_pk')
     if not _is_pk(payee_now) or R != payee_now:
         run.refuse('wrong_destination', "the template's recipient is not the payee's current key")
     edge = edge_key(I, R)
     if ts % 1000 != BOUND_MS:
         if edge in run.novated or run.bound_advertised():
-            run.refuse('bound_note_required', 'this edge takes bound credit notes only (residue 997)')
-        run.refuse('timestamp_domain', f'a bound credit note has a timestamp ending in 997 ms, not {ts % 1000}')
+            run.refuse('bound_note_required', 'this edge takes bound notes only (residue 997)')
+        run.refuse('timestamp_domain', f'a bound note has a timestamp ending in 997 ms, not {ts % 1000}')
     if price != deal['price'] or total != P + price:
         run.refuse('amount_mismatch', f'the note must add exactly the agreed price ({deal["price"]} {run.unit})')
     if prior is not None and not run.verified(I, R, prior):
@@ -1321,7 +1322,7 @@ def _member(run, item, edges, context):
     as_creditor = sum(e['before']['total'] - e['new'] for e in edges if e['R'] == me)
     as_issuer = sum(e['before']['total'] - e['new'] for e in edges if e['I'] == me)
     if as_creditor != as_issuer:
-        run.refuse('not_net_neutral', f'your claims would fall by {as_creditor} {run.unit} and your debts by {as_issuer} {run.unit}')
+        run.refuse('not_net_neutral', f'the notes you hold would fall by {as_creditor} {run.unit} and the notes you issued by {as_issuer} {run.unit}')
     for e in edges:
         if not run.verified(e['I'], e['R'], e['before']):
             run.refuse('bad_prior_signature', "an edge state shown is not its issuer's signature")
@@ -1370,7 +1371,7 @@ def _issuer(run, item, edges, context):
     if fe['before']['total'] - fe['new'] != a or te['new'] - _before_total(te) != a:
         run.refuse('total_owed_changes', f'your total owed would change: both edges must move exactly {a} {run.unit}')
     if not (_same_id(context.get('payer'), fe['recipient_id']) and _same_id(context.get('payee'), te['recipient_id'])):
-        run.bad('the item names creditors other than the ones its edges are to')
+        run.bad('the item names holders other than the ones its edges are to')
     if any(e['before'] is not None and not run.verified(me, e['R'], e['before']) for e in (fe, te)):
         run.refuse('bad_prior_signature', 'an edge state shown is not signed by your key')
     run.fresh(T, [e['before']['timestamp'] for e in (fe, te) if e['before'] is not None])

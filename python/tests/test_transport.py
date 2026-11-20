@@ -1151,12 +1151,12 @@ class Redirects(unittest.TestCase):
                 contextlib.redirect_stdout(out):
             for k in ('VALUN_PROFILE', 'VALUN_SERVER', 'UV'):
                 os.environ.pop(k, None)
-            rc = cli.main(['--profile', 'r', 'join', '--sandbox', '--handle', 'h-redir', '--operator', 'Ann', '--server', base])
+            rc = cli.main(['--profile', 'r', 'join', '--sandbox', '--approvals', 'console', '--handle', 'h-redir', '--operator', 'Ann', '--server', base])
         self.assertEqual(rc, 1)
         self.assertIn(f'Joining failed (redirected): {base} answered with a redirect (HTTP 308) to https://valun.example. '
                       'This client follows no redirect, so nothing was done', out.getvalue())
         self.assertIn('  Next: if https://valun.example is your Valun server, join it: `valun --profile r join --sandbox '
-                      '--handle h-redir --operator Ann --server https://valun.example`.', out.getvalue())
+                      '--handle h-redir --operator Ann --approvals console --server https://valun.example`.', out.getvalue())
 
 
 class PlainHttp(unittest.TestCase):
@@ -1268,7 +1268,7 @@ class PlainHttp(unittest.TestCase):
         # a join: nothing sent, nothing kept
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            rc = cli.main(['--profile', 'j', 'join', '--sandbox', '--handle', 'h-plain', '--operator', 'Ann',
+            rc = cli.main(['--profile', 'j', 'join', '--sandbox', '--approvals', 'console', '--handle', 'h-plain', '--operator', 'Ann',
                            '--server', self.SERVER])
         self.assertEqual(rc, 1)
         self.assertIn(f'Joining failed (plain_http): {self.SERVER} is plain http on another machine, so this client sends it '

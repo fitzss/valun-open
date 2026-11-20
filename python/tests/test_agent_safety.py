@@ -268,7 +268,7 @@ class Prepare(unittest.TestCase):
     def test_known_commitments_get_their_own_text_and_unknown_tools_the_generic_one(self):
         cases = [(Agent(DEAL), *ACCEPT, "ACCEPT bob's offer"),
                  (Agent(DEAL), *COUNTER, 'COUNTER-OFFER to bob'),
-                 (Agent(DEAL), *REVIEW, 'ISSUE A CREDIT NOTE of 20 PC'),
+                 (Agent(DEAL), *REVIEW, 'ISSUE A NOTE of 20 PC'),
                  (Agent(people=PEOPLE), 'valun_propose', {'counterparty': 'BOB ', 'role': 'payer', 'title': 't', 'description': 'x',
                                                           'deliverable': 'd', 'price': 3},
                   f'NEW OFFER to bob ({BOB_ID})'),
@@ -373,7 +373,7 @@ class BoundToTheSnapshot(unittest.TestCase):
         self.assertEqual(unbound(self, Agent(make_deal(make_terms(deal_id='vd_2222222222222222'))), *ACCEPT), 'deal_mismatch')
         self.assertEqual(unbound(self, Agent(make_deal(make_terms(proposer=ME_ID))), *ACCEPT), 'own_offer')   # only theirs is answered
         self.assertEqual(unbound(self, Agent(make_deal(make_terms(proposer=ME_ID))), *COUNTER), 'own_offer')
-        self.assertIn('ISSUE A CREDIT NOTE', Agent(make_deal(make_terms(proposer=ME_ID))).prepare(*REVIEW)['text'])   # either side proposed
+        self.assertIn('ISSUE A NOTE', Agent(make_deal(make_terms(proposer=ME_ID))).prepare(*REVIEW)['text'])   # either side proposed
         euros = make_terms()
         euros['price'] = {'amount': 20, 'unit': 'EUR'}
         self.assertEqual(unbound(self, Agent(make_deal(euros)), *ACCEPT), 'bad_terms')
@@ -571,7 +571,7 @@ class EndToEnd(unittest.TestCase):
                 return WorldClient(w, s)
         a = WorldAgent(s)
         p = a.prepare(*REVIEW)
-        self.assertIn('ISSUE A CREDIT NOTE of 5 PC', p['text'])
+        self.assertIn('ISSUE A NOTE of 5 PC', p['text'])
         w.add_deal('vd_1111111111111111', price=500)
         w.log.clear()
         with self.assertRaises(vc.ValunError) as e:
@@ -712,11 +712,11 @@ class Adapters(unittest.TestCase):
             self.assertIn(words, joined)
         self.assertNotIn(cli.CONSOLE_DECIDES, joined)
         for words in ('your offers and counter-offers', 'your acceptances (taking a job included)', 'your guarantee offers',
-                      'the IOU or payment by transfer you sign when you accept a delivery', 'Rejecting does not unsign it',
-                      'honoring a guarantee call (your IOU, recorded at once)', 'the consents your client signs by itself',
+                      'the note or payment by transfer you sign when you accept a delivery', 'Rejecting does not unsign it',
+                      'honoring a guarantee call (your note, recorded at once)', 'the consents your client signs by itself',
                       # the 0.7.2 review: a rejected payment by transfer is purged, and the agent may clear its own limits
                       'A rejected payment by transfer is the exception: it is deleted, its signatures included (the server '
-                      'keeps only their hashes), and you may pay again through the same IOU at once while it is unchanged',
+                      'keeps only their hashes), and you may pay again through the same note at once while it is unchanged',
                       "loosening or clearing a limit you recorded with valun_set_limits (never past your owner's mandate)",
                       'paying that deal by transfer waits until 1 hour and 2 minutes after you signed it',
                       # the RC's staging test (2026-11-18): the console shows the server's time, a minute sooner
@@ -728,20 +728,20 @@ class Adapters(unittest.TestCase):
         # a held IOU's deadline is the console's: a minute before its hour at the tracker ends; and the warning of a
         # server older than valun-app da29d10, whose card shows the hour itself and which sends a late approval on
         # (the RC's review, R2-OTHER-6: the live testnet ran 1b1f18f, and 0.7.2 had dropped this warning)
-        self.assertIn('Approve or reject a held IOU by the deadline its card shows, a minute before its hour at the tracker '
-                      'ends: an IOU still held when that hour ends is never recorded and pays nothing, and a server whose '
-                      'card shows the hour itself as the deadline (one from before 2026-11-18) still sends an IOU approved '
+        self.assertIn('Approve or reject a held note by the deadline its card shows, a minute before its hour at the tracker '
+                      'ends: a note still held when that hour ends is never recorded and pays nothing, and a server whose '
+                      'card shows the hour itself as the deadline (one from before 2026-11-18) still sends a note approved '
                       'after it, which then fails at the tracker and leaves the delivery accepted, unpaid and no longer '
                       'disputable.', owner)
         repo = os.path.dirname(os.path.dirname(HERE))
         for doc in ('python/README.md', 'docs/GETTING-STARTED.md'):
             with open(os.path.join(repo, doc), encoding='utf-8') as f:
                 text = ' '.join(f.read().split())
-            self.assertIn('still sends an IOU approved after it, which then fails at the tracker and leaves the delivery '
+            self.assertIn('still sends a note approved after it, which then fails at the tracker and leaves the delivery '
                           'accepted, unpaid and no longer disputable', text, doc)
         for words in ("your agent's offers and counter-offers", 'its guarantee offers',
-                      'the IOU or payment by transfer it signs when it accepts a delivery', 'Rejecting does not unsign it',
-                      "Never held: honoring a guarantee call (your agent's own IOU",
+                      'the note or payment by transfer it signs when it accepts a delivery', 'Rejecting does not unsign it',
+                      "Never held: honoring a guarantee call (your agent's own note",
                       'within 20 minutes',
                       'A rejected payment by transfer is the exception: it is deleted, its signatures included',
                       'your agent loosening or clearing a limit it recorded (never past your mandate)'):
@@ -753,14 +753,14 @@ class Adapters(unittest.TestCase):
             self.assertNotIn('the server keeps it on record.', text)
         # ask's own offer of console names what console holds, never "what it signs" (the review: honors, guarantee
         # calls and consents are signed and never held)
-        self.assertIn('holds its offers, acceptances and guarantee offers, and the IOU or payment at each delivery, for '
+        self.assertIn('holds its offers, acceptances and guarantee offers, and the note or payment at each delivery, for '
                       'you in the owner console', cli.JOIN_APPROVALS['ask'])
         self.assertNotIn('holds what it signs', cli.JOIN_APPROVALS['ask'])
         # and doctor's line before a join (the RC's staging test, 2026-11-18): what the join it suggests will use
         before = cli._approvals_before_join(argparse.Namespace(profile='default'), types.SimpleNamespace(state={}))
         self.assertIn("the Valun server holds your agent's offers and counter-offers, its acceptances (taking a job "
-                      'included), its guarantee offers, and the IOU or payment by transfer it signs when it accepts a '
-                      'delivery for you in the owner console', before)
+                      'included), its guarantee offers, and the note or payment by transfer it signs when it accepts a '
+                      'delivery for them in the owner console', before)
         for text in (agent, owner, *cli.JOIN_APPROVALS.values(), *mcp_server.APPROVAL_TEXT.values(), mcp_server.ASK_WITHOUT_FORMS,
                      mcp_server.APPROVAL_UNAVAILABLE['what_this_means'], before):
             self.assertNotIn('every commitment waits', text.lower())
@@ -838,7 +838,7 @@ class Terminal(unittest.TestCase):
         self.assertIn('Owner mandate updated (approve_above 0, review_deliveries on): ' + cli.CONSOLE_HOLDS + ' now wait for '
                       'you in the owner console (http://valun.invalid/pilot#owner). ' + cli.CONSOLE_DECIDES + ' Never held: '
                       + cli.CONSOLE_NEVER + '. `valun --profile c console` opens the console.', printed.getvalue())
-        self.assertIn('Accepted deliveries still wait for your review (review_deliveries is on): the IOU or payment by '
+        self.assertIn('Accepted deliveries still wait for your review (review_deliveries is on): the note or payment by '
                       'transfer your agent signs when it accepts a delivery is held for you until you approve it. Untick '
                       'Review deliveries in the owner console (http://valun.invalid/pilot#owner)', printed.getvalue())
         with open(path, encoding='utf-8') as f:

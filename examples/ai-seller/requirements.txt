@@ -1,2 +1,2 @@
-valun[ai,ergo]==0.7.2
+valun[ai,ergo]==0.7.3
 anthropic==2.8.0

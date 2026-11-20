@@ -1474,18 +1474,38 @@ export const HONEST_LABELS_TESTNET: Readonly<{what_basis_records: string; outsta
 export const HONEST_LABELS_CIRCULATION_TESTNET: Readonly<{what_basis_records: string; outstanding_promise: string; third_party: string}>;
 export const REAL_VS_SIMULATED_TESTNET: Readonly<{real: string; simulated: string; not_proven: string}>;
 export const REAL_VS_SIMULATED_CIRCULATION_TESTNET: Readonly<{real: string; simulated: string; not_proven: string}>;
-/** TOUR_GOALS[step] in a network's unit (the amounts are PC-sized: times the scale). */
+/** The testnet's honest label for paying a third party, without circulating credit (fix inbox #177). */
+export const THIRD_PARTY_TESTNET: string;
+/** The testnet's honest label for paying a third party, with circulating credit (fix inbox #177). */
+export const PAY_THIRD_PARTY_TESTNET: string;
+/**
+ * The tour's goal for `step` in a network's unit (the amounts are PC-sized: times the scale): TOUR_GOALS[step] for 1 to
+ * 5, 'The tour is complete.' only for 'done', TOUR_NO_STEP for anything else (fix inbox #175).
+ */
 export function tourGoal(step: unknown, unit?: string, scale?: number): string;
-/** The tracker a credit note goes to, in an approval text. */
+/** The goal of a step that is neither 1 to 5 nor 'done' (fix inbox #175). */
+export const TOUR_NO_STEP: string;
+/**
+ * The tour step what a participant holds (hx from sandbox-exact, hm from sandbox-mallory) and owes (ox to sandbox-exact)
+ * gives, with how many deals it paid by transfer and what set-offs cleared: 1 to 5, or 'done' (fix inbox #175).
+ */
+export function tourStepFrom(hx: number, hm: number, ox: number, paidByTransfer: number, cleared: number, notary: number): 1 | 2 | 3 | 4 | 5 | 'done';
+/** valun_directory's labels for the practice agents the server runs (operator_run), by handle (fix inbox #177). */
+export const DIRECTORY_LABELS: Readonly<Record<'sandbox-exact' | 'sandbox-mallory', string>>;
+/** valun_directory's label for a house agent the server runs (house_agent). */
+export const HOUSE_LABEL: string;
+/** The label valun_directory gives a directory entry: a practice agent's or a house agent's, else null. */
+export function directoryLabel(entry: unknown): string | null;
+/** The tracker a note goes to, in an approval text. */
 export function trackerWords(network: unknown): string;
 /**
  * valun_check_payer's summary: the verdict, its reasons and the cover as plain sentences, e.g. 'Accept: Both sides allow
- * it. Within its budget: ... Your own side: Your own limits allow it. Backed for you up to 3 by @erin.' Each reason of
+ * it. Within its budget: ... Your own side: Your own limits allow it. Guaranteed for you up to 3 by @erin.' Each reason of
  * the server's is a sentence after a stop, a fragment after a comma; without reasons, the words of CHECK_FALLBACK; a
  * verdict this client does not know reads Unknown. From a server with fix inbox #87 (payer_side in the answer): the
  * step's verdict leads, an ask_owner names whose owner decides (checkOwners, CHECK_ASK_LEAD), and the payee's own reasons
  * follow 'Your own side: ' (the cover's sentence is among them). From an older server, as in 0.7.1: the cover named by
- * this client ('backed for you up to N') for accept and ask_owner when cover.covered is a whole number above 0, and 'Your
+ * this client ('guaranteed for you up to N') for accept and ask_owner when cover.covered is a whole number above 0, and 'Your
  * own side: ' only for a payee_side of decline or ask_owner. A check of a new deal at the price of an offer the payer
  * made you (offersCountedAt) says it is for a new deal on top of that offer, and how to check the offer itself (deal_id).
  */
@@ -1630,6 +1650,8 @@ export interface DirectoryEntry {
   /** Its display name. */
   name: string;
   operator: string;
+  /** Only the agents the server runs carry it: which practice agent it is, or that a house agent may decline (0.7.3). */
+  label?: string;
   /** about, services and wants: cut to 160 code points, with '…' appended when cut (fix inbox #36). */
   about: string;
   services: string;

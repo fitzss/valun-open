@@ -245,14 +245,14 @@ test('a commitment to a handle the network does not have says so, and points to 
 test('with circulating credit a payer is promised no credit note before it accepts the delivery', async () => {
   // The tour's step 2 offer said "(your credit note)" for a deal the tour then paid with a note held.
   assert.equal(owes('payer', 'sandbox-mallory', 2000000, 'nanoERG', true), 'after you accept their delivery you will pay '
-    + 'sandbox-mallory 2000000 nanoERG (0.002 tERG): with your credit note, or with notes you hold if you choose to.');
+    + 'sandbox-mallory 2000000 nanoERG (0.002 tERG): with your own note, or with notes you hold if you choose to.');
   assert.equal(owes('payer', 'sandbox-mallory', 2000000, 'nanoERG'), 'after you accept their delivery you will owe '
-    + 'sandbox-mallory 2000000 nanoERG (0.002 tERG) (your credit note).', 'without circulating credit: as before');
-  assert.equal(owes('payee', 'bob', 3, 'PC', true), 'you must deliver; bob would then owe you 3 PC (their credit note).');
+    + 'sandbox-mallory 2000000 nanoERG (0.002 tERG) (your note).', 'without circulating credit: as before');
+  assert.equal(owes('payee', 'bob', 3, 'PC', true), 'you must deliver; bob would then owe you 3 PC (their note).');
   for (const name of ['respond: accept as the payer on a circulation server (0.7.2)',
     'respond: counter as the payer on a circulation server (0.7.2)', 'propose: a due consent run signs a set-off first']) {
     const sc = scenario(name);
     const {text} = await world(sc).agent.prepare(sc.tool, sc.args);
-    assert.ok(text.includes('with your credit note, or with notes you hold if you choose to.') && !text.includes('(your credit note)'), name);
+    assert.ok(text.includes('with your own note, or with notes you hold if you choose to.') && !text.includes('(your note)'), name);
   }
 });

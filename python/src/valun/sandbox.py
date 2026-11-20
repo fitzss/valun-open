@@ -326,7 +326,7 @@ def owner_hint(c, status):
     where = f'in the owner console ({server}/pilot#owner)'
     return {'proposed_awaiting_owner': f'  your offer waits for you {where}: approve it there, and this goes on by itself',
             'accepted_awaiting_owner': f'  your acceptance waits for you {where}: approve it there, and this goes on by itself',
-            'completion_awaiting_owner': (f'  the payment your agent signed waits for you {where}: approve it there (an IOU '
+            'completion_awaiting_owner': (f'  the payment your agent signed waits for you {where}: approve it there (a note '
                                           'by the deadline its card shows, a minute before the hour after it was signed '
                                           'ends; a payment by transfer within 20 minutes), or the deal is not paid')}.get(status)
 
@@ -372,7 +372,7 @@ def buy(store, seller, service, text, price=None, server=None, wait_s=600, log=p
     if got == expected:
         if pay_with in (None, 'own_note'):
             r = c.complete(did, d['delivery']['sha256'])
-            log(f'delivery verified exactly; credit note: {r["status"]}')
+            log(f'delivery verified exactly; your note: {r["status"]}')
             if owner_hint(c, r['status']):
                 log(owner_hint(c, r['status']))
             return {'deal_id': did, 'status': r['status'], 'verified': True, 'amount': price,
@@ -715,8 +715,12 @@ def tour(store, server=None, yes=False, ask=None, log=print, poll_s=TOUR_POLL_S,
         nxt = st.get('sandbox_next_steps')
         if not isinstance(nxt, dict):
             raise vc.ValunError('feature_unavailable', 'valun_status shows no sandbox_next_steps for this participant')
-        step = nxt.get('tour_step')
-        if step is not None and step != current:     # None: the owner decides; the step in hand goes on
+        # None, or a plan that only waits for the owner (waiting_for_your_owner and no call, fix inbox #175): the owner
+        # decides; the step in hand goes on. A plan with a call to make beside the wait is that call's step, and a done
+        # plan ends the tour: what waits then is not part of it.
+        waits = nxt.get('waiting_for_your_owner') and not nxt.get('next_calls') and nxt.get('tour_step') != 'done'
+        step = None if waits else nxt.get('tour_step')
+        if step is not None and step != current:
             if isinstance(top, int) and (step == 'done' or (isinstance(step, int) and step > top)):
                 try:
                     totals = edge_totals(c)

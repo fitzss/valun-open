@@ -90,15 +90,15 @@ class OwnerWait(unittest.TestCase):
         self.assertEqual(va.HELD_NOTE_SEND_MARGIN_MS, 60_000)
         # the approval semantics of 2026-11-17: what is held, what the payee sees, until when, and what each answer leaves
         self.assertEqual(r['what_happened'], (
-            'You accepted the delivery and signed your IOU to bob for 3000000 nanoERG (0.003 tERG). The Valun server holds '
-            "it for your owner: it is not on the tracker yet, and bob sees that you accepted the delivery but not the IOU's "
+            'You accepted the delivery and signed your note to bob for 3000000 nanoERG (0.003 tERG). The Valun server holds '
+            "it for your owner: it is not on the tracker yet, and bob sees that you accepted the delivery but not the note's "
             f'signature. Tell your owner to approve or reject it in the owner console, {url} (deal {DEAL}, approval '
             "va_0a0a0a0a0a0a) by 2026-11-18T00:09:33.997Z, the owner console's deadline, a minute before the tracker's "
-            'limit (2026-11-18T00:10:33.997Z): an IOU still held at 2026-11-18T00:10:33.997Z is never recorded and pays '
+            'limit (2026-11-18T00:10:33.997Z): a note still held at 2026-11-18T00:10:33.997Z is never recorded and pays '
             'nothing, and valun_deal then says what to do. If approved, you owe bob 3000000 nanoERG (0.003 tERG) more: a '
             'promise to pay that the Valun testnet tracker (anchored on Ergo testnet) records, not a settlement. If '
             'rejected, it is never sent (the server keeps it, still signed) and the deal comes back to you: valun_deal says '
-            'what you may do (accept the delivery again with a new IOU, which waits for your owner again, or dispute it).'))
+            'what you may do (accept the delivery again with a new note, which waits for your owner again, or dispute it).'))
         # an ordinary note has no hour
         plain = dict(held, credit_note=dict(held['credit_note'], note={'total': 9_000_000, 'timestamp': T - 997 + 500}))
         r = agent_with(Stub(plain)).review({'deal_id': DEAL, 'decision': 'accept'})
@@ -219,7 +219,7 @@ class OwnerWait(unittest.TestCase):
         me = Stub.participant_id
         cases = [({'status': 'proposed_awaiting_owner', 'your_role': 'payer'}, "your owner's: your signed offer waits"),
                  ({'status': 'rejected_by_owner', 'your_role': 'payer'}, 'nobody: your owner rejected this offer'),
-                 ({'status': 'completion_awaiting_owner', 'your_role': 'payer'}, "your owner's: the IOU or payment by transfer"),
+                 ({'status': 'completion_awaiting_owner', 'your_role': 'payer'}, "your owner's: the note or payment by transfer"),
                  ({'status': 'completion_awaiting_owner', 'your_role': 'payee'}, "the payer's owner's: the payment its agent"),
                  ({'status': 'accepted_awaiting_owner', 'acceptance': {'by': me, 'held_for': ['acceptor_owner']}},
                   "an owner's: the acceptance waits for your owner in the owner console"),
@@ -234,7 +234,7 @@ class OwnerWait(unittest.TestCase):
         stub.deal = lambda did: {'id': DEAL, 'status': 'note_failed', 'your_role': 'payer', 'current': None}
         stub.learn_owner_decisions = lambda did, d: []
         r = agent_with(stub).deal({'deal_id': DEAL})
-        self.assertEqual(r['whose_turn'], 'yours: the delivery stays accepted and is unpaid; pay it again (a new IOU, or by '
+        self.assertEqual(r['whose_turn'], 'yours: the delivery stays accepted and is unpaid; pay it again (a new note, or by '
                                           'transfer when the window allows)')
 
     def test_valun_status_says_what_the_server_holds_by_the_mandate(self):
@@ -246,7 +246,7 @@ class OwnerWait(unittest.TestCase):
                                            'nanoERG'),
                          f'The Valun server also holds these for your owner in the owner console ({url}) until they '
                          'approve: your offers, counter-offers and acceptances priced above 5000000 nanoERG (0.005 tERG), '
-                         'and your guarantee offers capped above it (approve_above); and the IOU or payment by transfer you '
+                         'and your guarantee offers capped above it (approve_above); and the note or payment by transfer you '
                          'sign when you accept a delivery (review_deliveries is on). It never holds an honor of a guarantee '
                          'call.')
         self.assertIn('Your owner has changed your owner mandate since console set it',
@@ -264,7 +264,7 @@ class OwnerWait(unittest.TestCase):
                                       'server_ended': {'state': 'rejected', 'approval_id': 'va_17df22079678', 'at': None}}])
         self.assertEqual([(x['approval_id'], x['kind'], x['state']) for x in out], [('va_17df22079678', 'issue_note', 'rejected')])
         text = out[0]['what_this_means']
-        self.assertIn('Your owner rejected the IOU you signed for this deal. The Valun server did not send it', text)
+        self.assertIn('Your owner rejected the note you signed for this deal. The Valun server did not send it', text)
         self.assertIn('the tracker could still record it until 2026-11-18T00:10:33.997Z', text)
         self.assertIn('Your Valun client counts it as not applied', text)
         out = va.owner_decisions({'status': 'rejected_by_owner', 'counterparty': {'handle': 'bob'},
@@ -323,14 +323,14 @@ class Review072(unittest.TestCase):
         self.assertEqual([x['what_this_means'] for x in out], [
             "Earlier (2026-11-17T20:00:00.000Z), your owner did not approve your acceptance of bob's offer: nothing was "
             'agreed by it. The deal has since moved on (note_issued).',
-            'Earlier (2026-11-17T22:00:00.000Z), your owner rejected the IOU you signed for this deal: it was never sent to '
+            'Earlier (2026-11-17T22:00:00.000Z), your owner rejected the note you signed for this deal: it was never sent to '
             'the tracker. The deal has since moved on (note_issued).'])
         # two rejected IOUs on a deal that is delivered again: the last says what to do, the earlier one when it was
         two = [ended('issue_note', 'rejected', 'va_0a0a0a0a0a02', '2026-11-17T22:00:00.000Z'),
                ended('issue_note', 'rejected', 'va_0a0a0a0a0a03', '2026-11-17T22:30:00.000Z')]
         out = va.owner_decisions(view('delivered', two))
         self.assertTrue(out[0]['what_this_means'].startswith('Earlier (2026-11-17T22:00:00.000Z), your owner rejected'))
-        self.assertIn('The deal is back to delivered: accept the delivery again to sign a new IOU', out[1]['what_this_means'])
+        self.assertIn('The deal is back to delivered: accept the delivery again to sign a new note', out[1]['what_this_means'])
         # a counter-offer or acceptance: open on the other side's offer only
         out = va.owner_decisions(view('open', [ended('propose', 'rejected')]))
         self.assertIn('Its offer stays as it was until 2026-11-19T10:00:00.000Z: you may accept it', out[0]['what_this_means'])
@@ -339,7 +339,7 @@ class Review072(unittest.TestCase):
                                                     'counter-offer, and bob never saw it. The deal has since moved on (open).')
         # a payment still due: the delivery stays accepted, so no dispute is offered
         out = va.owner_decisions(view('payment_due', [ended('issue_note', 'rejected')]))
-        self.assertIn('The delivery stays accepted, and you must still pay it: accept it again to sign a new IOU',
+        self.assertIn('The delivery stays accepted, and you must still pay it: accept it again to sign a new note',
                       out[0]['what_this_means'])
         self.assertNotIn('dispute', out[0]['what_this_means'])
 
@@ -349,12 +349,12 @@ class Review072(unittest.TestCase):
         rec = [{'route': 'note', 'timestamp': T, 'approval_id': 'va_17df22079678', 'outcome': 'not_applied',
                 'server_ended': {'state': 'void_stale', 'approval_id': 'va_17df22079678', 'at': None}}]
         text = va.owner_decisions(view('delivered', [ended('issue_note', 'void_stale')]), rec)[0]['what_this_means']
-        self.assertTrue(text.startswith("The IOU you signed for this deal went void when your owner approved it "
-                                        "(void_stale): the pair's IOU or a party's key had changed since you signed it."))
+        self.assertTrue(text.startswith("The note you signed for this deal went void when your owner approved it "
+                                        "(void_stale): the pair's note or a party's key had changed since you signed it."))
         self.assertNotIn('rejection', text)
         self.assertNotIn('could still record it', text)       # a stale note is not claimed to be recordable
         self.assertIn('The server keeps it on record, still signed, and never sends it.', text)
-        self.assertIn(", or until your client sees this pair's IOU move past it.", text)
+        self.assertIn(", or until your client sees this pair's note move past it.", text)
         text = va.owner_decisions(view('delivered', [ended('pay_by_transfer', 'void_key_revoked')]))[0]['what_this_means']
         self.assertTrue(text.startswith("Your payment by transfer went void before your owner decided (void_key_revoked): "
                                         "a party's key was revoked."), text)
@@ -364,7 +364,7 @@ class Review072(unittest.TestCase):
         # without a record of this client's, the server's own fallback_after is the time named
         text = va.owner_decisions(view('delivered', [ended('pay_by_transfer', 'rejected')],
                                        payment={'state': 'void_rejected', 'fallback_after': '2026-11-18T00:11:33.999Z'}))[0]
-        self.assertIn('or with your own IOU or another IOU after 2026-11-18T00:11:33.999Z (or once that IOU moves past it), or '
+        self.assertIn('or with your own note or another note after 2026-11-18T00:11:33.999Z (or once that note moves past it), or '
                       'dispute the delivery.', text['what_this_means'])
         # a record this client could not mark as not applied still blocks for good once the IOU moves (0.7.1's rule)
         rec = [{'route': 'note', 'timestamp': T, 'approval_id': 'va_17df22079678'}]
@@ -372,13 +372,13 @@ class Review072(unittest.TestCase):
         self.assertIn("Paying this deal by transfer waits until after 2026-11-18T00:12:33.997Z (your Valun client's time, a "
                       "minute after the server's, which the owner console shows, as a margin for clocks that differ). Your "
                       "Valun client still "
-                      "counts it as a payment that may apply: once this pair's IOU moves past it, your client pays this "
+                      "counts it as a payment that may apply: once this pair's note moves past it, your client pays this "
                       'deal no more until your owner resolves it (`valun attempts resolve`).', text)
         self.assertNotIn('counts it as not applied', text)
         # no record at all: the server's own rule, which ends once its journal shows the pair's IOU moved past it
         text = va.owner_decisions(view('delivered', [ended('issue_note', 'void_stale')]))[0]['what_this_means']
         self.assertIn("Paying this deal by transfer waits until a little over an hour after you signed it, unless this pair's "
-                      'IOU moves past it first.', text)
+                      'note moves past it first.', text)
 
     def test_the_other_side_is_told_of_a_console_decision(self):
         """The review: owner_decisions covered only the viewer's own approvals, so after the payer's owner rejected an
@@ -388,12 +388,12 @@ class Review072(unittest.TestCase):
         d = view('delivered', your_role='payee', history=hist)
         self.assertEqual(va.counterparty_owner_decisions(d, ME), [
             {'at': '2026-11-17T23:10:55.530Z', 'kind': 'issue_note', 'event': 'owner_rejected',
-             'what_this_means': "bob's owner rejected the IOU its agent signed for your delivery. Nothing reached the tracker, "
+             'what_this_means': "bob's owner rejected the note its agent signed for your delivery. Nothing reached the tracker, "
                                 'and bob owes you nothing for this deal yet. The deal is back to delivered: bob\'s agent may '
                                 'accept it again or dispute it.'}])
         self.assertEqual(va.counterparty_owner_decisions(d, None), [])          # never without knowing who is who
         later = va.counterparty_owner_decisions(dict(d, status='note_issued'), ME)
-        self.assertEqual(later[0]['what_this_means'], "Earlier (2026-11-17T23:10:55.530Z), bob's owner rejected the IOU its "
+        self.assertEqual(later[0]['what_this_means'], "Earlier (2026-11-17T23:10:55.530Z), bob's owner rejected the note its "
                                                       'agent signed for your delivery; nothing reached the tracker. The deal '
                                                       'has since moved on (note_issued).')
         acc = [{'at': '2026-11-17T23:10:55.530Z', 'by': f'owner:{BOB}', 'event': 'owner_rejected', 'kind': 'accept'}]
@@ -425,14 +425,14 @@ class Review072(unittest.TestCase):
                 r = agent_with(stub).deal({'deal_id': DEAL})
             self.assertEqual((r['decide_by'], r['note_expires_at']), ('2026-11-18T00:09:33.997Z', '2026-11-18T00:10:33.997Z'))
             if passed:
-                self.assertEqual(r['whose_turn'], "your owner's: the IOU you signed when you accepted the delivery still "
+                self.assertEqual(r['whose_turn'], "your owner's: the note you signed when you accepted the delivery still "
                                                   'waits for them, but the tracker records it only until '
                                                   '2026-11-18T00:10:33.997Z, which has passed: tell your owner to reject '
                                                   'it in the owner console (approved now, it would fail at the tracker and '
                                                   'leave the delivery accepted, unpaid and no longer disputable), then '
-                                                  'accept the delivery again to sign a new IOU')
+                                                  'accept the delivery again to sign a new note')
             else:
-                self.assertEqual(r['whose_turn'], "your owner's: the IOU you signed when you accepted the delivery waits for "
+                self.assertEqual(r['whose_turn'], "your owner's: the note you signed when you accepted the delivery waits for "
                                                   'them in the owner console: they approve or reject it by '
                                                   "2026-11-18T00:09:33.997Z, the owner console's deadline, a minute before "
                                                   "the tracker's limit (2026-11-18T00:10:33.997Z)")
@@ -468,11 +468,11 @@ class Review072(unittest.TestCase):
             s.honor_guarantee = honor
             return s
         r = agent_with(stub_with('failed')).respond_guarantee({'guarantee_id': gid, 'action': 'honor'})
-        self.assertEqual(r['what_happened'], f'The tracker did not record your IOU for call {first}, so it adds nothing to '
+        self.assertEqual(r['what_happened'], f'The tracker did not record your note for call {first}, so it adds nothing to '
                                              'what you owe carol. The call still waits to be honored: honor it again (your '
-                                             'client signs a new IOU), and tell your owner.')
+                                             'client signs a new note), and tell your owner.')
         r = agent_with(stub_with('honored')).respond_guarantee({'guarantee_id': gid, 'action': 'honor'})
-        self.assertTrue(r['what_happened'].startswith(f'You honored call {first}: your IOU to carol for 500000 nanoERG'))
+        self.assertTrue(r['what_happened'].startswith(f'You honored call {first}: your note to carol for 500000 nanoERG'))
         self.assertNotIn(second, r['what_happened'])
 
 

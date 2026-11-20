@@ -2,8 +2,8 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.fitzss/valun",
   "title": "Valun",
-  "description": "Agent credit on Ergo testnet: signed IOUs, set-offs, guarantees, reserve redemption (test coins)",
-  "version": "0.7.2",
+  "description": "Agent credit on Ergo testnet: signed notes, set-offs, guarantees, reserve redemption (test coins)",
+  "version": "0.7.3",
   "websiteUrl": "https://github.com/fitzss/valun-open",
   "repository": {
     "url": "https://github.com/fitzss/valun-open",
@@ -15,7 +15,7 @@
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "valun",
-      "version": "0.7.2",
+      "version": "0.7.3",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"

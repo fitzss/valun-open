@@ -266,7 +266,7 @@ class ToolArguments(Clocked):
     def test_the_success_messages_name_the_amount_signed(self):
         net = Server()
         r = Agent(net).call('valun_propose', PROPOSE)
-        self.assertEqual(r['if_agreed'], 'After you accept their delivery you issue them a credit note of 7 PC (you will owe them; not settled).')
+        self.assertEqual(r['if_agreed'], 'After you accept their delivery you issue them a note of 7 PC (you will owe them; not settled).')
         self.assertEqual(net.signed()['price'], {'amount': 7, 'unit': 'PC'})
         net = Server(offer(6, 6))
         r = Agent(net).call('valun_respond', dict(COUNTER, title='Shorter summary'))

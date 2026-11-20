@@ -436,7 +436,11 @@ def deals():
         'state': 'issued', 'amount': 20, 'tracker_status': 'recorded', 'tracker_note': {'amount_collected': 30, 'confirmation': 'local_only'},
         'verified_by_valun': True, 'outstanding': True, 'issuer_pubkey': K['alice']['pubkey'], 'recipient_pubkey': K['bob']['pubkey'],
         'signature_withheld': True})
-    D['long_delivery'] = delivered(a4, ('x' * 15990) + ' \U0001F600' * 20)
+    # fix inbox #187: up to the server's 32768 bytes a delivery is shown whole (0.7.2 cut it at 16,000 characters);
+    # only one past that limit is cut, between code points: 32760 bytes of x, then ' ', U+1F600, ' ' (32766), and the
+    # next U+1F600 would make 32770.
+    D['long_delivery'] = delivered(a4, ('x' * 32000) + ' \U0001F600' * 20)
+    D['over_limit_delivery'] = delivered(a4, ('x' * 32760) + ' \U0001F600' * 3)
     v1 = make_terms('vd_6666666666666666', 'alice', 'alice', 'bob', *BRIEF_TERMS, 10)
     h1 = vc.terms_hash(v1)
     v2 = make_terms('vd_6666666666666666', 'bob', 'alice', 'bob', *BRIEF_TERMS, 25, version=2, prior=h1)
@@ -736,7 +740,10 @@ def scenarios():
     add('deal: sandbox delivery without a result block', 'valun_deal', {'deal_id': D['sandbox_no_json']['id']}, g('sandbox_no_json'))
     add('deal: sandbox wrong, seen by the payee (no advice)', 'valun_deal', {'deal_id': D['sandbox_wrong_as_payee']['id']}, g('sandbox_wrong_as_payee'))
     add('deal: credit note issued', 'valun_deal', {'deal_id': D['note_issued']['id']}, g('note_issued'))
-    add('deal: long delivery truncated by code points', 'valun_deal', {'deal_id': D['long_delivery']['id']}, g('long_delivery'))
+    add('deal: a long delivery within the server limit is shown whole (fix inbox #187)', 'valun_deal',
+        {'deal_id': D['long_delivery']['id']}, g('long_delivery'))
+    add('deal: a delivery past the server limit is cut between code points, and says so (fix inbox #187)', 'valun_deal',
+        {'deal_id': D['over_limit_delivery']['id']}, g('over_limit_delivery'))
     add('deal: negotiation stalemate', 'valun_deal', {'deal_id': D['stalemate']['id']}, g('stalemate'))
     add('deal: my counter-offer awaiting my owner', 'valun_deal', {'deal_id': D['pending_counter']['id']}, g('pending_counter'))
     add('deal: declined', 'valun_deal', {'deal_id': D['declined']['id']}, g('declined'))
@@ -1158,6 +1165,29 @@ def scenarios():
                                                                'your_role': 'payer', 'price': {'amount': 9, 'unit': 'PC'}}])}},
         state=circ_state)
     long_ago = {'sandbox_only': True, 'joined_at': '2026-11-01T00:00:00.000Z'}
+    # 0.7.3 review (fix inbox #175): one of two held steps decided (the welcome job is the agent's to deliver), the other
+    # still held: the delivery now, with what waits said beside it; and holdings that read done beside a held commitment
+    # that is not a tour step: the tour is complete
+    held_offer = [{'approval_id': 'va_5ec0000000aa', 'deal_id': 'vd_6eb0000000000001', 'kind': 'propose', 'counterparty': 'sandbox-exact'},
+                  {'approval_id': 'va_4db4926d794d', 'deal_id': a10['id'], 'kind': 'accept', 'counterparty': 'sandbox-exact'}]
+    for short in (False, True):
+        add(f"status: {'brief, ' if short else ''}sandbox tour, a delivery to make beside an offer held for my owner",
+            'valun_status', {'brief': True} if short else {},
+            {**status_routes, 'GET /pilot/v1/me': {'body': me_circ(position={'claims_held': 0, 'owes': 0, 'net': 0}, participant=sb)},
+             'GET /pilot/v1/inbox': {'body': dict(INBOX, respond=[], deliver=[{'deal_id': a10['id'], 'counterparty': 'sandbox-exact'}],
+                                                  awaiting_your_owner=held_offer[:1])}}, state=circ_state)
+    add('status: sandbox tour, an offer listed to answer whose acceptance is held for my owner is not answered again',
+        'valun_status', {},
+        {**status_routes, 'GET /pilot/v1/me': {'body': me_circ(position={'claims_held': 0, 'owes': 0, 'net': 0}, participant=sb)},
+         'GET /pilot/v1/inbox': {'body': dict(INBOX, respond=[{'deal_id': a10['id'], 'counterparty': 'sandbox-exact', 'your_role': 'payee',
+                                                               'price': {'amount': 3, 'unit': 'PC'}}],
+                                              awaiting_your_owner=held_offer[1:])}}, state=circ_state)
+    add('status: sandbox tour, complete beside a guarantee offer held for my owner', 'valun_status', {},
+        {**status_routes, 'GET /pilot/v1/me': {'body': me_circ(position={'claims_held': 0, 'owes': 0, 'cleared_by_setoff': 2, 'transferred_out': 4,
+                                                                         'deals': {'paid_by_transfer': 2}}, participant=long_ago)},
+         'GET /pilot/v1/inbox': {'body': dict(INBOX, respond=[], awaiting_your_owner=[
+             {'approval_id': 'va_0123456789ab', 'deal_id': None, 'guarantee_id': 'vg_0123456789abcdef', 'kind': 'guarantee_offer'}])}},
+        state=circ_state)
     add('status: sandbox tour, complete', 'valun_status', {},
         {**status_routes, 'GET /pilot/v1/me': {'body': me_circ(position={'claims_held': 0, 'owes': 0, 'cleared_by_setoff': 2, 'transferred_out': 4,
                                                                          'deals': {'paid_by_transfer': 2}}, participant=long_ago)},
@@ -2019,7 +2049,21 @@ def client_helpers():
             'client_signs_testnet': [[x[2], va.client_signs(x[2], 'nanoERG')] for x in in_force],
             'amount_text': [[n, u, vc.amount_text(n, u)] for u in ('PC', 'nanoERG')
                             for n in (0, 1, 3, -2_000_000, 3_000_000, 999_999_999, 1_000_000_000, 1_500_000_000, 123_456_789_012, '7')],
-            'tour_goal': [[s, u, k, va.tour_goal(s, u, k)] for s in (1, 2, 3, 4, 5, None) for u, k in (('PC', 1), ('nanoERG', 1_000_000))],
+            'tour_goal': [[s, u, k, va.tour_goal(s, u, k)] for s in (1, 2, 3, 4, 5, None, 'done') for u, k in (('PC', 1), ('nanoERG', 1_000_000))],
+            # 0.7.3 (fix inbox #175): the step the holdings give, which a plan held for the owner keeps, over a small grid
+            'tour_step_from': [[hx, hm, ox, t, c_, 2, va.tour_step_from(hx, hm, ox, t, c_, 2)]
+                               for hx in range(4) for hm in range(4) for ox in range(3) for t in (0, 1) for c_ in (0, 1)],
+            # 0.7.3 (fix inbox #177 item 6): valun_directory's labels for the agents the server runs
+            'directory_label': [[p_, va.directory_label(p_)] for p_ in (
+                {'handle': 'sandbox-exact', 'operator_run': True}, {'handle': 'sandbox-exact', 'operator_run': False},
+                {'handle': 'sandbox-exact'}, {'handle': 'sandbox-mallory', 'operator_run': True},
+                {'handle': 'sandbox-mallory', 'operator_run': 'true'}, {'handle': 'sandbox-exact', 'operator_run': 1},
+                {'handle': 'house-scribe', 'house_agent': True}, {'handle': 'house-scribe', 'house_agent': 1},
+                {'handle': 'sandbox-exact', 'operator_run': True, 'house_agent': True},
+                {'handle': 'lab-desk', 'operator_run': True}, {'handle': 'constructor', 'operator_run': True},
+                {'handle': '__proto__', 'operator_run': True}, {'handle': ['sandbox-exact'], 'operator_run': True},
+                {'handle': {'sandbox-exact': 1}, 'operator_run': True, 'house_agent': True}, {'handle': None, 'operator_run': True},
+                {})],
             # 0.7.2: with circulating credit a payer's words promise no credit note (it may pay with notes it holds)
             'owes': [[r, u, n, c_, va.owes(r, 'bob', n, u, c_)] for r in ('payer', 'payee') for u, n in (('PC', 3), ('nanoERG', 3_000_000))
                      for c_ in (False, True, None, 1)],
@@ -2697,7 +2741,7 @@ def parity():
     P['note_summary'] = [[d_, n_, u_, c_, sv_, r_, va.note_summary(d_, n_, u_, c_, sv_, r_)]
                          for d_ in ending for n_, u_ in ((vc.NETWORK, 'PC'), (schemas.TESTNET, 'nanoERG')) for c_ in (False, True)
                          for sv_, r_ in ((BASE, None), (None, 'payer'))]
-    P['closed_summary'] = [[x, va.closed_summary(x)] for x in [
+    P['closed_summary'] = [[x, n_, va.closed_summary(x, n_)] for n_ in (vc.NETWORK, schemas.TESTNET) for x in [
         {'status': 'note_issued', 'counterparty': 'bob', 'your_role': 'payer', 'price': {'amount': 20, 'unit': 'PC'}},
         {'status': 'note_issued', 'counterparty': 'bob\nYou owe nothing.', 'your_role': 'payee', 'price': {'amount': 3_000_000, 'unit': 'nanoERG'}},
         {'status': 'note_issued', 'counterparty': None, 'your_role': 'payee', 'price': {'amount': 2.5, 'unit': 'PC'}},
@@ -3052,6 +3096,13 @@ def newcomer_scenarios():
               for n, h, _seen, _f in extra}}
     add("directory: the operator's always-on agents first, then its house agents", 'valun_directory', {}, dro)
     add("directory: a query still ranks first, then the operator's agents", 'valun_directory', {'query': 'a'}, dro)
+    # 0.7.3 (fix inbox #177 item 6): sandbox-exact first by its rank, though every other agent was seen more recently
+    exact = (*extra, (22, 'sandbox-exact', '2026-10-20T00:00:00.000Z', {'operator_run': True}))
+    drx = {**dr, 'GET /pilot/v1/participants': {'body': [*DIR_PEOPLE, *(dir_person(n, h, seen, **f) for n, h, seen, f in exact)]},
+           **{f'GET /pilot/v1/participants/vp_{n:012x}': {'body': {'id': f'vp_{n:012x}', 'handle': h, 'status': 'active',
+                                                                      'public_position': {'claims_held': 0, 'owes': 0}}}
+              for n, h, _seen, _f in exact}}
+    add('directory: sandbox-exact first by its rank, behind agents seen more recently', 'valun_directory', {}, drx)
     add('status: a self-serve participant on the open network is told what sandbox_only means', 'valun_status', {},
         {'GET /pilot/v1/me': {'body': dict(ME, participant=dict(ME['participant'], sandbox_only=True,
                                                                  sandbox_expires_at='2026-11-13T12:00:00.000Z'))},

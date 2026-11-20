@@ -135,7 +135,9 @@ from valun import agent as va  # noqa: E402
 # The server's deal labels on the testnet, word for word: valun-app lib/pilot/core.mjs since 37693d5 (in 84e8773, Nov 19:
 # the user-facing money word is "note", fix inbox #173), on top of e18eb73 (Nov 16: a netting is committed, not final;
 # fix inbox #85, #136 item 7). test_the_settlement_label_is_the_servers_own reads them in the server's own source,
-# where this repository carries it (server/).
+# where this repository carries it (server/). The client holds these texts again since 0.7.3 (fix inbox #177; 0.7.2 kept
+# its own until then, and this test held two copies: ec950ca): its labels are checked against them word for word, so a
+# server wording change to them turns this test red at the sync that brings it, unless a client release comes with it.
 SERVER_TESTNET_REDEMPTION = ('Its holder can redeem it on Ergo testnet against a tERG reserve locked under the key that '
                              'signed it, if one was posted; tERG are test coins with no monetary value.')
 SERVER_CIRCULATION_SETTLEMENT_TESTNET = (
@@ -145,20 +147,6 @@ SERVER_CIRCULATION_SETTLEMENT_TESTNET = (
     'stays committed only as long as the tracker key never commits an earlier total again. ' + SERVER_TESTNET_REDEMPTION)
 SERVER_SETTLEMENT_TESTNET = ('not settled until redeemed: issuing a note creates a promise to pay that stays outstanding. '
                              + SERVER_TESTNET_REDEMPTION)
-# The 0.7.2 client's own copy of those labels (valun/agent.py), word for word: the server's words from e18eb73 until
-# #173. The two differ on purpose, in #173's words (a note, its holder, a transfer, a loop of notes, a reserve under the
-# key that signed it), until fix inbox #177 (client 0.7.3) moves the client to the server's words: that release brings
-# them back to one text, drops these CLIENT_ copies, and restores the check that the client's labels are the server's
-# own.
-CLIENT_TESTNET_REDEMPTION = ("Its creditor can redeem it on Ergo testnet against the issuer's tERG reserve, if the issuer "
-                             'posted one; tERG are test coins with no monetary value.')
-CLIENT_CIRCULATION_SETTLEMENT_TESTNET = (
-    'not settled until redeemed: a credit note is an outstanding obligation. With circulating credit it can move to a new '
-    'creditor (debt transfer, signed by the debtor and both creditors) or be cancelled against an equal opposite obligation '
-    '(set-off, signed by every party; no net position changes); a netting is committed once a tracker box on Ergo '
-    'testnet commits it, and stays committed only as long as the tracker key never commits an earlier total again. '
-    + CLIENT_TESTNET_REDEMPTION)
-CLIENT_SETTLEMENT_TESTNET = 'not settled until redeemed: issuing a credit note creates an outstanding obligation. ' + CLIENT_TESTNET_REDEMPTION
 # What is true on the pilot and false on the testnet.
 PILOT_ONLY = ('PC', 'Nothing is redeemed', 'no reserve', 'local_only', 'no blockchain connection', 'pilot tracker',
               'settlement does not exist')
@@ -173,8 +161,11 @@ class TestnetWording(unittest.TestCase):
         for words in PILOT_ONLY + ('synthetic units with no monetary value', 'Experimental pilot', 'independently controlled'):
             self.assertNotIn(words, doc)
         for words in ('valun-testnet-1', 'nanoERG of Ergo testnet', 'no monetary value', 'redeemed on Ergo testnet',
-                      "against its issuer's tERG reserve", 'committed, not final', 'retired on 2026-11-13'):
+                      'against a tERG reserve locked under the key that signed it', 'committed, not final',
+                      'retired on 2026-11-13', 'paid with notes it signs with its own key'):
             self.assertIn(words, doc)
+        for words in ('IOU', 'credit note', 'debt', 'creditor'):     # fix inbox #177: the money word is "note"
+            self.assertNotIn(words, doc)
 
     def test_amounts_read_in_nanoerg_and_terg_exactly(self):
         for n, text in [(3_000_000, '3000000 nanoERG (0.003 tERG)'), (1_500_000_000, '1500000000 nanoERG (1.5 tERG)'),
@@ -187,41 +178,46 @@ class TestnetWording(unittest.TestCase):
 
     def test_the_settlement_label_is_the_servers_own(self):
         """The server's source this repository carries (server/, synced from valun-app) holds the server's labels above
-        word for word, and no client label calls a netting final (0.7.2). Until fix inbox #177 the 0.7.2 client keeps
-        its own words (CLIENT_ above), not these."""
+        word for word, and the client's own constants are those very texts (0.7.3, fix inbox #177); no client label calls
+        a netting final (0.7.2)."""
         core = os.path.join(os.path.dirname(os.path.dirname(HERE)), 'server', 'lib', 'pilot', 'core.mjs')
         if not os.path.exists(core):
             self.skipTest('no server/ copy here')
         with open(core, encoding='utf-8') as f:
             src = f.read()
-        self.assertIn(SERVER_CIRCULATION_SETTLEMENT_TESTNET.replace(SERVER_TESTNET_REDEMPTION, '${TESTNET_REDEMPTION}'), src)
-        self.assertIn(SERVER_SETTLEMENT_TESTNET.replace(SERVER_TESTNET_REDEMPTION, '${TESTNET_REDEMPTION}'), src)
+        for label in (SERVER_CIRCULATION_SETTLEMENT_TESTNET, SERVER_SETTLEMENT_TESTNET,
+                      va.CIRCULATION_SETTLEMENT_TESTNET, va.SETTLEMENT_TESTNET):
+            self.assertIn(label.replace(SERVER_TESTNET_REDEMPTION, '${TESTNET_REDEMPTION}'), src)
         self.assertIn(SERVER_TESTNET_REDEMPTION.replace("'", "\\'"), src)
+        self.assertEqual(va.TESTNET_REDEMPTION, SERVER_TESTNET_REDEMPTION)
         for net in ('valun-testnet-1', 'valun-pilot-1'):
             for circulating in (True, False):
                 self.assertNotIn('stays final', json.dumps(va.labels(circulating, net)))
 
     def test_the_testnet_labels_are_the_servers_and_say_nothing_only_the_pilot_is(self):
-        # 0.7.2's own words, the server's until #173; the server's own again with #177
-        for circulating, settlement in ((True, CLIENT_CIRCULATION_SETTLEMENT_TESTNET), (False, CLIENT_SETTLEMENT_TESTNET)):
+        # the server's own words again since 0.7.3 (fix inbox #177)
+        for circulating, settlement in ((True, SERVER_CIRCULATION_SETTLEMENT_TESTNET), (False, SERVER_SETTLEMENT_TESTNET)):
             lab = va.labels(circulating, 'valun-testnet-1')
-            self.assertEqual(lab['settlement'], settlement, 'word for word the 0.7.2 client\'s deal label')
+            self.assertEqual(lab['settlement'], settlement, "word for word the server's deal label")
             self.assertEqual(lab['not_settled'], settlement)
             texts = [lab['settlement'], *lab['honest_labels'].values(), *lab['real_vs_simulated'].values()]
             for t in texts:
                 for words in PILOT_ONLY:
                     self.assertNotIn(words, t, f'{circulating}: {t[:60]}')
             self.assertIn('anchors them on Ergo testnet', lab['honest_labels']['what_basis_records'])
-            self.assertIn("issuer's reserve", lab['honest_labels']['what_basis_records'])
+            self.assertIn('a tERG reserve locked on Ergo testnet under the key that signed it', lab['honest_labels']['what_basis_records'])
+            for t in texts:                 # fix inbox #177: "note", and "backed" only by a reserve under the signing key
+                for words in ('IOU', 'credit note', 'obligation', 'debt', 'creditor', "issuer's reserve"):
+                    self.assertNotIn(words, t, f'{circulating}: {t[:60]}')
         self.assertEqual(va.labels(True), va.labels(True, 'valun-pilot-1'), 'the pilot: as before')
         self.assertIn('Nothing is redeemed', va.labels(True)['settlement'])
 
     def test_approval_texts_and_the_tour_on_the_testnet(self):
         self.assertEqual(va.owes('payer', 'bob', 3_000_000, 'nanoERG'),
-                         'after you accept their delivery you will owe bob 3000000 nanoERG (0.003 tERG) (your credit note).')
-        self.assertEqual(va.owes('payee', 'bob', 3, 'PC'), 'you must deliver; bob would then owe you 3 PC (their credit note).')
+                         'after you accept their delivery you will owe bob 3000000 nanoERG (0.003 tERG) (your note).')
+        self.assertEqual(va.owes('payee', 'bob', 3, 'PC'), 'you must deliver; bob would then owe you 3 PC (their note).')
         self.assertEqual(va.client_signs({'setoff': True, 'max_PC': 50_000_000}, 'nanoERG'),
-                         ['set-offs that cancel equal claims and debts of yours around a cycle (your net position does not change), '
+                         ['set-offs that clear loops of notes you hold and issued (your net position does not change), '
                           'up to 50000000 nanoERG (0.05 tERG) each'])
         goal = va.tour_goal(3, 'nanoERG', 1_000_000)
         self.assertEqual(goal, 'Pay with your own note: buy notary from sandbox-exact (2000000 nanoERG (0.002 tERG)). Then the '
@@ -229,6 +225,9 @@ class TestnetWording(unittest.TestCase):
                                'Valun client signs by itself.')
         self.assertEqual(va.tour_goal(3), va.TOUR_GOALS[3], 'the pilot: as before')
         self.assertEqual(va.tour_goal('done', 'nanoERG', 1_000_000), 'The tour is complete.')
+        # fix inbox #175: only 'done' is complete; no other step (None: a plan with no step) ever says so
+        for step in (None, 0, 6, 'x'):
+            self.assertEqual(va.tour_goal(step, 'nanoERG', 1_000_000), va.TOUR_NO_STEP, step)
         snap = {'counterparty': {'id': 'vp_' + 'f' * 12, 'handle': 'sandbox-exact'}, 'unit': 'nanoERG', 'network': 'valun-testnet-1',
                 'not_settled': va.labels(True, 'valun-testnet-1')['not_settled']}
         text = va.ValunAgent._text_propose({'role': 'payer', 'price': 3_000_000, 'title': 't', 'description': 'd', 'deliverable': 'x'}, snap)

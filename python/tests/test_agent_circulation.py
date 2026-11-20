@@ -910,11 +910,12 @@ class PayWith(Base):
                                      'expected_terms_hash': d['current']['terms_hash'],
                                      'expected_quote_digest': tpl['quote_digest'], 'expected_claim_total': 3})
         lines = p['text'].split('\n')
-        self.assertEqual(lines[0], f"Valun - PAY sandbox-mallory 2 PC for deal {self.did} by moving 2 PC of sandbox-exact's debt "
-                                   'from you to sandbox-mallory:')
-        self.assertEqual(lines[1:5], ['  your claim on sandbox-exact: 3 -> 1 PC (issuer signature checked by your client)',
-                                      '  sandbox-exact will owe sandbox-mallory 0 -> 2 PC; its total debt does not change',
-                                      '  you issue no credit note for this deal',
+        self.assertEqual(lines[0], f'Valun - PAY sandbox-mallory 2 PC for deal {self.did} by moving 2 PC of what sandbox-exact '
+                                   'owes you to sandbox-mallory:')
+        self.assertEqual(lines[1:5], ["  the total of sandbox-exact's note to you: 3 -> 1 PC (issuer signature checked by your client)",
+                                      "  the total of sandbox-exact's note to sandbox-mallory: 0 -> 2 PC; what sandbox-exact owes in "
+                                      'all does not change',
+                                      '  you issue no note for this deal',
                                       '  sandbox-exact consents immediately; accepting is final: if the transfer does not complete '
                                       'the deal stays accepted and you pay later'])
         self.assertIn(f'sandbox-exact is {X_ID} and sandbox-mallory is {M_ID}', lines[5])
@@ -1053,7 +1054,7 @@ class PayWith(Base):
 
     def test_own_note_is_the_ordinary_review(self):
         p = self.agent.prepare('valun_review_delivery', dict(self.args, pay_with='own_note'))
-        self.assertIn('ISSUE A CREDIT NOTE of 2 PC', p['text'])
+        self.assertIn('ISSUE A NOTE of 2 PC', p['text'])
         self.assertNotIn('expected_quote_digest', p['args'])
         r = self.agent.call('valun_review_delivery', p['args'])
         self.assertEqual(r['status'], 'note_issued')
@@ -1135,11 +1136,11 @@ class OnlyWhenAdvertised(unittest.TestCase):
         self.assertEqual(st['notes_you_can_spend'], [{'issuer': 'sandbox-exact', 'amount': 3, 'amount_PC': 3, 'checked_by_your_client': True,
                                                       'issuer_consents': 'immediate',
                                                       'how': "valun_review_delivery decision='accept' pay_with=\"sandbox-exact\": pays a "
-                                                             'delivery by moving that much of their debt to you onto the payee'}])
+                                                             'delivery by moving that much of what they owe you onto the payee'}])
         self.assertEqual({k: v for k, v in st['money_view'].items() if k != 'how_to_read'},
                          {'you_hold': 3, 'you_hold_PC': 3, 'you_owe': 0, 'you_owe_PC': 0, 'net': 3, 'net_PC': 3, 'cleared_so_far': 0,
                           'cleared_so_far_PC': 0})
-        self.assertTrue(st['summary'].startswith('You hold 3 PC of credit notes others issued to you and owe 0 PC (net 3 PC)'))
+        self.assertTrue(st['summary'].startswith('You hold 3 PC of notes others issued to you and owe 0 PC of your own (net 3 PC)'))
         self.assertEqual(st['clearing']['consents_pending'], 0)
         self.assertEqual(len(st['clearing']['your_client_signs']), 3)
         self.assertEqual((st['consent_policy_in_force']['setoff'], st['consent_policy_in_force']['as_issuer'],
@@ -1218,9 +1219,9 @@ class OnlyWhenAdvertised(unittest.TestCase):
                 texts[st] = d['whose_turn']
                 self.assertEqual(d['payment']['transfer_id'], 'vt_1')
                 self.assertEqual('how_you_can_pay' in d, st == 'payment_due')
-        self.assertTrue(texts['paying_by_transfer'].startswith('theirs: the issuer and the payee sign the debt transfer'))
+        self.assertTrue(texts['paying_by_transfer'].startswith('theirs: the issuer and the payee sign the transfer'))
         self.assertTrue(texts['payment_due'].startswith('yours: you accepted the delivery but it is not paid yet'))
-        self.assertEqual(texts['paid_by_transfer'], 'nobody: the deal is paid by debt transfer')
+        self.assertEqual(texts['paid_by_transfer'], 'nobody: the deal is paid by transfer')
 
     def test_a_deal_whose_info_cannot_be_read_is_shown_as_without_circulation(self):
         w = World(list(CIRC), welcome=False)
@@ -1547,12 +1548,93 @@ class SandboxNextSteps(Base):
         self.assertEqual(self.steps()['next_calls'][0]['tool'], 'valun_review_delivery')   # the next status decides
 
     def test_an_approval_waiting_for_the_owner_is_waited_for(self):
+        self.world.welcome = False              # nothing else to do: no offer to answer, no delivery to make
         inbox = self.world.inbox
         self.world.inbox = lambda: dict(inbox(), awaiting_your_owner=[{'approval_id': 'va_0123456789abcdef', 'deal_id': 'vd_1',
                                                                        'kind': 'pay_by_transfer'}])
         n = self.steps()
-        self.assertEqual((n['tour_step'], n['next_calls']), (None, []))
+        # fix inbox #175: the step its holdings give (here 1: it holds and owes nothing), never "complete", and what waits
+        self.assertEqual((n['tour_step'], n['next_calls'], n['retry_after_seconds']), (1, [], va.OWNER_RETRY_S))
         self.assertIn('owner console', n['then'])
+        self.assertEqual(n['waiting_for_your_owner'], {'approval_id': 'va_0123456789abcdef', 'deal_id': 'vd_1',
+                                                       'kind': 'pay_by_transfer'})
+        self.assertTrue(n['goal'].startswith('Waiting for your owner: approval va_0123456789abcdef (deal vd_1) is held for '
+                                             'them in the owner console. Then: Earn: sandbox-exact buys text-stats'), n['goal'])
+        self.assertNotIn('The tour is complete', json.dumps(n))
+        brief = self.agent.call('valun_status', {'brief': True})['sandbox_next_steps']
+        self.assertEqual((brief['tour_step'], brief['waiting_for_your_owner']['approval_id']), (1, 'va_0123456789abcdef'))
+
+    def test_the_two_held_steps_of_the_175_repro_keep_step_1(self):
+        # Basis's repro (fix inbox #175, 0.7.2 on the live testnet): the welcome acceptance and the Quickstart's offer
+        # to sandbox-exact both held for the owner, holding and owing nothing: 0.7.2 said tour_step null, "The tour is
+        # complete.", next_calls []. The welcome job's acceptance is the held one: its offer, still listed to answer, is
+        # not answered again.
+        self.world.tick()
+        welcome = self.world.order[0]
+        inbox = self.world.inbox
+        held = [{'approval_id': 'va_4db4926d794d', 'deal_id': welcome, 'kind': 'accept', 'version': 1,
+                 'counterparty': 'sandbox-exact'},
+                {'approval_id': 'va_5ec0000000aa', 'deal_id': 'vd_6eb0000000000001', 'kind': 'propose', 'version': 1,
+                 'counterparty': 'sandbox-exact'}]
+        self.world.inbox = lambda: dict(inbox(), awaiting_your_owner=held)
+        n = self.steps()
+        self.assertEqual((n['tour_step'], n['next_calls'], n['retry_after_seconds']), (1, [], 60))
+        self.assertTrue(n['goal'].startswith(f'Waiting for your owner: approval va_4db4926d794d (deal {welcome}) is '
+                                             'held for them in the owner console. Then: Earn: '), n['goal'])
+        self.assertEqual(n['waiting_for_your_owner'], {'approval_id': 'va_4db4926d794d', 'deal_id': welcome,
+                                                       'kind': 'accept'})
+        self.assertNotIn('The tour is complete', json.dumps(n))
+        self.assertIn('Your owner must first approve a commitment', n['then'])
+        # The owner approves the welcome acceptance and not yet the offer: the job is the agent's to deliver now, with
+        # what still waits said beside it (the 0.7.3 review: 0.7.2 and the first candidate waited for both).
+        self.world.agree(welcome, sign_text(S, vc.statement('accept', self.world.deals[welcome]['current']['terms_hash'])))
+        self.world.inbox = lambda: dict(inbox(), awaiting_your_owner=held[1:])
+        n = self.steps()
+        self.assertEqual((n['tour_step'], n['next_calls']),
+                         (1, [{'tool': 'valun_deliver', 'arguments': {'deal_id': welcome, 'exact_result': True},
+                               'why': 'deliver the exact result your Valun client computes from the agreed text'}]))
+        self.assertTrue(n['goal'].startswith('Earn: sandbox-exact buys text-stats'), n['goal'])
+        self.assertEqual(n['waiting_for_your_owner'], {'approval_id': 'va_5ec0000000aa', 'deal_id': 'vd_6eb0000000000001',
+                                                       'kind': 'propose'})
+        self.assertIn(" call valun_status again. Meanwhile, your owner must approve a commitment in the owner console",
+                      n['then'])
+        self.assertIn('(deal vd_6eb0000000000001, approval va_5ec0000000aa', n['then'])
+        self.assertTrue(n['then'].endswith('; tell them.'), n['then'])
+        brief = self.agent.call('valun_status', {'brief': True})['sandbox_next_steps']
+        self.assertEqual((brief['next_calls'][0]['tool'], brief['waiting_for_your_owner']['approval_id']),
+                         ('valun_deliver', 'va_5ec0000000aa'))
+
+    def test_holdings_that_read_done_while_something_is_held_are_done(self):
+        self.assertEqual(va.tour_step_from(0, 0, 0, 1, 2, 2), 'done')
+        self.assertEqual([va.tour_step_from(*h, 2) for h in ((3, 0, 0, 0, 0), (1, 0, 0, 1, 0), (0, 0, 1, 1, 1), (0, 2, 0, 2, 1),
+                                                              (0, 0, 0, 0, 0), (1, 1, 1, 0, 0), (0, 1, 1, 0, 0))],
+                         [2, 3, 4, 5, 1, 3, 4])
+        self.world.welcome = False
+        for _ in range(2):
+            self.world.deals[self.world.delivered_deal(payee=M_ID)]['status'] = 'paid_by_transfer'
+        inbox, position = self.world.inbox, self.world.position
+        self.world.inbox = lambda: dict(inbox(), awaiting_your_owner=[{'approval_id': 'va_0123456789abcdef', 'deal_id': None,
+                                                                       'guarantee_id': 'vg_0123456789abcdef',
+                                                                       'kind': 'guarantee_offer'}])
+        self.world.position = lambda: dict(position(), cleared_by_setoff=2)
+        n = self.steps()
+        # No tour step can leave the holdings reading done while it is held (a held step-5 payment leaves
+        # sandbox-mallory's note held: step 5), so what waits is not a tour step: the tour is complete (the 0.7.3 review:
+        # the first candidate said step 5, "Spend again", which the agent could not take).
+        self.assertEqual((n['tour_step'], n['next_calls'], n['goal'], n['retry_after_seconds']),
+                         ('done', [], 'The tour is complete.', va.OWNER_RETRY_S))
+        self.assertTrue(n['then'].startswith('Nothing of the tour is left to do. Your owner must first approve a '
+                                             'commitment in the owner console'), n['then'])
+        self.assertIn('(guarantee vg_0123456789abcdef', n['then'])
+        self.assertNotIn('deal none', n['then'])
+        self.assertEqual(n['waiting_for_your_owner'], {'approval_id': 'va_0123456789abcdef', 'guarantee_id': 'vg_0123456789abcdef',
+                                                       'kind': 'guarantee_offer'})
+        self.assertNotIn('Spend again', json.dumps(n))
+        self.assertNotIn(va.TOUR_DONE_KEY, self.agent.store.state, 'a held plan never marks the tour done')
+        self.world.inbox = inbox                 # the owner decided: the same holdings, and the tour's end is kept
+        n = self.steps()
+        self.assertEqual((n['tour_step'], n['goal'], 'waiting_for_your_owner' in n), ('done', 'The tour is complete.', False))
+        self.assertIn(va.TOUR_DONE_KEY, self.agent.store.state)
 
     def test_holdings_decide_the_next_deal_and_a_cycle_is_waited_for(self):
         self.world.welcome = False
@@ -1686,7 +1768,7 @@ class SandboxNextSteps(Base):
         self.assertEqual(n['with_the_sandbox_agents'], {va.SANDBOX_EXACT: none, va.SANDBOX_MALLORY: none})
         self.assertNotEqual(n['tour_step'], 'done')
         self.assertNotIn('cancelled', n['then'])
-        self.assertIn('The tour is not complete: no set-off has cleared any of your claims or debts yet', n['then'])
+        self.assertIn('The tour is not complete: no set-off has cleared any of the notes you hold or issued yet', n['then'])
         self.assertEqual((n['tour_step'], n['next_calls'][0]['tool'], n['next_calls'][0]['arguments']['counterparty'],
                           n['next_calls'][0]['arguments']['role']), (1, 'valun_propose', 'sandbox-exact', 'payee'))
 
@@ -1696,7 +1778,7 @@ class PayerWords(Base):
     sandbox-mallory 2 PC (your credit note)", for a deal the tour then pays with sandbox-exact's note (the PAY prompt
     said so later). How a payer pays is decided only when it accepts the delivery, so on a server with circulating
     credit the payer's words in an offer, an acceptance and a counter-offer promise no credit note."""
-    PAYER = ('after you accept their delivery you will pay sandbox-mallory 2 PC: with your credit note, or with notes you '
+    PAYER = ('after you accept their delivery you will pay sandbox-mallory 2 PC: with your own note, or with notes you '
              'hold if you choose to.')
 
     def text(self, call):
@@ -1709,9 +1791,9 @@ class PayerWords(Base):
         self.assertEqual((n['tour_step'], n['next_calls'][0]['arguments']['role']), (2, 'payer'))
         t = self.text(n['next_calls'][0])
         self.assertIn('If sandbox-mallory accepts, the deal is binding without asking you again: ' + self.PAYER, t)
-        self.assertNotIn('(your credit note)', t)
+        self.assertNotIn('(your note)', t)
         sell = dict(n['next_calls'][0], arguments=dict(n['next_calls'][0]['arguments'], role='payee'))
-        self.assertIn('you must deliver; sandbox-mallory would then owe you 2 PC (their credit note).', self.text(sell))
+        self.assertIn('you must deliver; sandbox-mallory would then owe you 2 PC (their note).', self.text(sell))
 
 
 class PayerWordsWithoutCirculation(Base):
@@ -1722,7 +1804,7 @@ class PayerWordsWithoutCirculation(Base):
         offer = {'counterparty': 'sandbox-mallory', 'role': 'payer', 'title': 'notary job', 'deliverable': 'x', 'price': 2,
                  'description': 'notary for this text:\n```\nhi\n```'}
         t = self.agent.prepare('valun_propose', offer)['text']
-        self.assertIn('after you accept their delivery you will owe sandbox-mallory 2 PC (your credit note).', t)
+        self.assertIn('after you accept their delivery you will owe sandbox-mallory 2 PC (your note).', t)
 
 
 class PhaseZeroFixes(unittest.TestCase):

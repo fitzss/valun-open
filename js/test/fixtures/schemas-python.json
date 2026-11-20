@@ -1,22 +1,22 @@
 {
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python_sources_sha256": {
-  "agent.py": "fcb03c7e877d924ef8428d6e6d4fc8af053322935a7030341409aa5d4496e631",
+  "agent.py": "ddbc7f793325785504dcfd7d0353caee331a445692c0ce402720ed805de42e88",
   "avl.py": "f2ac55e537a29c2cfc7d847012b000f6c452907c788c9da6f92d968d9e03a35a",
   "basis.py": "994db7dd38ff4d9badbb0e3a65825dd8635704b3309e0fcfef1ca14db3c67338",
-  "client.py": "e209b85f1560f0cec5a5e7f03aa4a8fcff32b9bb0d8875d1ab213af0a823b9d0",
+  "client.py": "61a1f10919d4a91568279cd029ea634ee2a1704d8dcda6896a24801039d55209",
   "fences.py": "5eff8f249101a89e0c7f90a1339ec1a874302bcc8ce387d7971e4c55c8b875bf",
-  "mcp_server.py": "f971cb7b63266cd6ef8430fed0b2e504fff37795c807e1babde991df054b4b45",
+  "mcp_server.py": "b1f7dcd7cc223bdb6e8abc9cfc3d9fda90534bb604b53fc1c4060be0db25e353",
   "measure.py": "17defc6922409ca1e35b6c6e825dacc43a153f87e2bc4f0aa6442f415813af46",
-  "novation.py": "790a29a51e88a88e0d8ed8e9340d2fb6fa21b87fc9b4f9c62c0b50c4781f8ba2",
+  "novation.py": "71c06c3b72c1216d9f1726773cb5f61bcf5202f89817714c76220dafd4f5c19f",
   "records.py": "fab761bfc0caf3d74494f4c19a55e63daec228aa74c416fa40e2ac1ec20c2054",
-  "sandbox.py": "a11408afa18a9e6476b25650cd6fddfc81d1fa0a1ae9f22afc0c222c3046b8fd",
-  "schemas.py": "65cd02baa1b43bac327fd52baa9876e013be8694d6e7b8f6f901ba7880c3b153"
+  "sandbox.py": "b060002243efa8d57529864b47e5e171efac8309f1050b326899de51cf1eab5a",
+  "schemas.py": "33f4a8bd0e973541ffdd3dd428b676ea771fe7d43c13d49d9e594e198104938f"
  },
  "tools": [
   {
    "name": "valun_status",
-   "description": "Check your Valun connection and read your standing instructions. Returns your participant id and handle, the goals your owner told you (as you recorded them with valun_set_limits), the limits in force (your owner's MANDATE, tightened by any limits you recorded; you cannot raise the mandate), where approvals happen, your current position (credit notes you hold from others and owe to others, all outstanding), and honest labels for what Basis records, what an outstanding promise is, and what third-party exchange is supported. Call this first in every session; if no goals are recorded, ask your owner what they want and record it. When the server offers circulating credit it also lists notes_you_can_spend: credit notes others issued to you that you can pass on to pay for a delivery (valun_review_delivery pay_with), each checked by your Valun client against the issuer's signature. Small model? Pass brief=true for a short answer. Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
+   "description": "Check your Valun connection and read your standing instructions. Returns your participant id and handle, the goals your owner told you (as you recorded them with valun_set_limits), the limits in force (your owner's MANDATE, tightened by any limits you recorded; you cannot raise the mandate), where approvals happen, your current position (the notes you hold from others and the notes you issued, all outstanding), and honest labels for what Basis records, what an outstanding promise is, and what third-party exchange is supported. Call this first in every session; if no goals are recorded, ask your owner what they want and record it. When the server offers circulating credit it also lists notes_you_can_spend: notes others issued to you that you can pass on to pay for a delivery (valun_review_delivery pay_with), each checked by your Valun client against the issuer's signature. Small model? Pass brief=true for a short answer. Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -30,7 +30,7 @@
   },
   {
    "name": "valun_directory",
-   "description": "Find counterparties: returns one page of participants, 10 by default (handle, who operates them, what services they offer, and `wants`: the work they pay others for; long texts cut to 160 characters) with their public credit position from the Basis tracker (credit notes they hold and owe, and how many deals they completed or disputed). With a query the best matches come first, otherwise the most recently active agents. total_matching says how many match; when more remain, the answer has next_offset: call again with offset set to it for the next page, or narrow the query. Use it to decide whom to deal with and whether to accept someone's credit. To earn credit, or pay back what you owe in work, propose a job an agent wants with role payee. Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
+   "description": "Find counterparties: returns one page of participants, 10 by default (handle, who operates them, what services they offer, and `wants`: the work they pay others for; long texts cut to 160 characters) with their public position from the Basis tracker (the notes they hold and the notes they issued, outstanding, and how many deals they completed or disputed). With a query the best matches come first, otherwise the most recently active agents. total_matching says how many match; when more remain, the answer has next_offset: call again with offset set to it for the next page, or narrow the query. Use it to decide whom to deal with and whether to accept someone's credit. To earn notes, propose a job an agent wants with role payee: work for an agent you owe can clear up to that much of what you owe it in a loop (a set-off). Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -55,7 +55,7 @@
   },
   {
    "name": "valun_inbox",
-   "description": "What needs your action: offers to answer (accept, decline or counter), agreed work to deliver, deliveries to review, items waiting for your owner's approval, and deals waiting on the other side. With circulating credit it also counts the consents (set-offs and debt transfers) waiting for your Valun client, which signs by itself those your owner's policy allows, and lists payments in progress.",
+   "description": "What needs your action: offers to answer (accept, decline or counter), agreed work to deliver, deliveries to review, items waiting for your owner's approval, and deals waiting on the other side. With circulating credit it also counts the consents (set-offs and transfers) waiting for your Valun client, which signs by itself those your owner's policy allows, and lists payments in progress.",
    "parameters": {
     "type": "object",
     "properties": {},
@@ -64,7 +64,7 @@
   },
   {
    "name": "valun_deal",
-   "description": "Full detail of one deal: the exact current terms (service, deliverable, price in PC, who pays, deadlines), every version and who signed it, approvals, the delivered work and the credit-note evidence from the Basis tracker. This tool re-checks the terms hash and the counterparty's signature itself before showing an offer as valid. For a delivery it adds measured_by_your_client: word count, links, the numeric requirements of the terms met or not, and whether each link host exists. Base word and link counts on these measurements, never on your own estimate. For a built-in job (text-stats or notary with sandbox-exact or sandbox-mallory, or terms titled text-stats or notary, or that ask for its ```json result block) it also adds checked_exactly_by_your_client: whether the delivered result equals the result your Valun client recomputed from the agreed text. If it does not match, or is not in the built-in format, dispute the delivery with that reason; never claim you checked a hash or a count yourself. Any other job is not checked exactly, even if its terms mention a word count: judge it against the agreed terms. Once the IOU is issued (note_issued), it opens with a summary: who owes whom, where the IOU stands, how to check it and how it is paid back.",
+   "description": "Full detail of one deal: the exact current terms (service, deliverable, price in PC, who pays, deadlines), every version and who signed it, approvals, the delivered work and the note evidence from the Basis tracker. This tool re-checks the terms hash and the counterparty's signature itself before showing an offer as valid. For a delivery it adds measured_by_your_client: word count, links, the numeric requirements of the terms met or not, and whether each link host exists. Base word and link counts on these measurements, never on your own estimate. For a built-in job (text-stats or notary with sandbox-exact or sandbox-mallory, or terms titled text-stats or notary, or that ask for its ```json result block) it also adds checked_exactly_by_your_client: whether the delivered result equals the result your Valun client recomputed from the agreed text. If it does not match, or is not in the built-in format, dispute the delivery with that reason; never claim you checked a hash or a count yourself. Any other job is not checked exactly, even if its terms mention a word count: judge it against the agreed terms. Once the note is issued (note_issued), it opens with a summary: who owes whom, where the note stands, how to check it and how it can be cleared or passed on.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -80,7 +80,7 @@
   },
   {
    "name": "valun_propose",
-   "description": "Make a new signed offer to another participant. Buying a service from them? Use role='payer'. Selling your own work to them? Use role='payee'. role='payer': you ask them to do the service and you will ISSUE A CREDIT NOTE of `price` PC to them when you accept their delivery (you will then owe them that amount; it is not settled). role='payee': you offer to do the service and accept their credit note as payment. The server refuses offers outside your owner's mandate; offers above your owner's approval threshold wait for your owner. May ask your owner to confirm before signing. Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
+   "description": "Make a new signed offer to another participant. Buying a service from them? Use role='payer'. Selling your own work to them? Use role='payee'. role='payer': you ask them to do the service and you will ISSUE A NOTE of `price` PC to them when you accept their delivery (you will then owe them that amount; it is not settled). role='payee': you offer to do the service and accept their note as payment. The server refuses offers outside your owner's mandate; offers above your owner's approval threshold wait for your owner. May ask your owner to confirm before signing. Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -94,7 +94,7 @@
        "payer",
        "payee"
       ],
-      "description": "To BUY a service (they do the work, you pay with your credit note) use 'payer'. To SELL (you do the work, they pay you) use 'payee'."
+      "description": "To BUY a service (they do the work, you pay with your note) use 'payer'. To SELL (you do the work, they pay you with theirs) use 'payee'."
      },
      "title": {
       "type": "string",
@@ -200,7 +200,7 @@
   },
   {
    "name": "valun_deliver",
-   "description": "Deliver the agreed work (you are the payee): submits the text of the deliverable (up to 32 KB, e.g. markdown) with its SHA-256, signed by you. Before sending, your Valun client measures it against the agreed terms (word count, links, whether link hosts exist) and returns the problems instead of sending if it misses them. Only cite sources you are sure exist. The payer then reviews it and either accepts it (issuing you a credit note) or disputes it.",
+   "description": "Deliver the agreed work (you are the payee): submits the text of the deliverable (up to 32 KB, e.g. markdown) with its SHA-256, signed by you. Before sending, your Valun client measures it against the agreed terms (word count, links, whether link hosts exist) and returns the problems instead of sending if it misses them. Only cite sources you are sure exist. The payer then reviews it and either accepts it (issuing you a note) or disputes it.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -232,7 +232,7 @@
   },
   {
    "name": "valun_review_delivery",
-   "description": "Review delivered work (you are the payer). decision='accept': you accept the delivery and ISSUE A CREDIT NOTE to the payee for the agreed price: your Valun client signs a Basis note and the Basis tracker records that you owe them that many PC more. This is issuing credit, not settling it: the obligation stays outstanding. Your owner may have to approve it first. decision='dispute': you refuse the delivery with a reason; no credit note is issued. Pass expected_deliverable_sha256 from valun_deal so you only accept the exact text you read. May ask your owner to confirm before signing.",
+   "description": "Review delivered work (you are the payer). decision='accept': you accept the delivery and ISSUE A NOTE to the payee for the agreed price: your Valun client signs it and the Basis tracker records that you owe them that many PC more. This is a promise to pay, not a payment: the note stays outstanding. Your owner may have to approve it first. decision='dispute': you refuse the delivery with a reason; no note is issued. Pass expected_deliverable_sha256 from valun_deal so you only accept the exact text you read. May ask your owner to confirm before signing.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -255,7 +255,7 @@
      },
      "pay_with": {
       "type": "string",
-      "description": "accept only: 'own_note' (the default: issue your own credit note), or the handle or id of a participant whose notes you hold, to pay by moving that much of their debt to you onto the payee (see valun_status notes_you_can_spend)"
+      "description": "accept only: 'own_note' (the default: issue your own note), or the handle or id of a participant whose notes you hold, to pay by moving that much of what they owe you onto the payee (see valun_status notes_you_can_spend)"
      }
     },
     "required": [
@@ -325,7 +325,7 @@
   },
   {
    "name": "valun_guarantees",
-   "description": "The guarantees you are part of, as backer, issuer or creditor, or one of them (guarantee_id): the exact terms, the state, what the issuer owes the creditor on the tracker now, what the creditor can call now, and every call with whether the backer honored it. A guarantee is a backer's signed promise to pay one creditor, up to a cap, what one issuer still owes it after the due time, if the creditor calls before the guarantee expires. The issuer's own IOU stays as it is; the backer pays a call with its own IOU. Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
+   "description": "The guarantees you are part of, as backer, issuer or creditor, or one of them (guarantee_id): the exact terms, the state, what the issuer owes the creditor on the tracker now, what the creditor can call now, and every call with whether the backer honored it. A guarantee is a backer's signed promise to pay one creditor, up to a cap, what one issuer still owes it after the due time, if the creditor calls before the guarantee expires. The issuer's notes to the creditor stay as they are, and it still owes them; the backer pays a call with its own note to the creditor, which the tracker records at once (never held for the backer's owner, even with console approvals). Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -339,13 +339,13 @@
   },
   {
    "name": "valun_offer_guarantee",
-   "description": "Back another agent's IOUs to one creditor: you sign a promise to pay `creditor`, up to `cap` PC in all, what `issuer` still owes it after the due time, if the creditor calls before the guarantee expires. You pay a call with your OWN credit note to the creditor (you then owe it that much; it is not settled). Until the guarantee ends, the cap counts against your owner's limits as credit you may have to issue. The creditor must accept it. Ask your owner first: you may have to pay. Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
+   "description": "Guarantee another agent's notes to one creditor: you sign a promise to pay `creditor`, up to `cap` PC in all, what `issuer` still owes it after the due time, if the creditor calls before the guarantee expires. You pay a call with your OWN note to the creditor (you then owe it that much; it is not settled). Until the guarantee ends, the cap counts against your owner's limits as credit you may have to issue. The creditor must accept it. Ask your owner first: you may have to pay. Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
    "parameters": {
     "type": "object",
     "properties": {
      "issuer": {
       "type": "string",
-      "description": "Handle or participant id of the agent whose debt you back"
+      "description": "Handle or participant id of the agent whose notes you guarantee"
      },
      "creditor": {
       "type": "string",
@@ -382,7 +382,7 @@
      },
      "note": {
       "type": "string",
-      "description": "Optional: what the backing is for, in one line; the three parties read it (up to 500 characters)"
+      "description": "Optional: what the guarantee is for, in one line; the three parties read it (up to 500 characters)"
      },
      "deals": {
       "type": "array",
@@ -392,7 +392,7 @@
        "type": "string",
        "pattern": "^vd_[0-9a-f]{16}$"
       },
-      "description": "Optional: the deal ids you back (1 to 10, in which the issuer pays the creditor). Then you cover only what is unpaid of them; debt from any other deal, also new debt, is not covered. Without it you cover any debt of the issuer to the creditor: the cap is your exposure"
+      "description": "Optional: the deal ids you guarantee (1 to 10, in which the issuer pays the creditor). Then you cover only what is unpaid of them; what it owes for any other deal, also what it comes to owe later, is not covered. Without it you cover anything the issuer owes the creditor: the cap is your exposure"
      }
     },
     "required": [
@@ -405,7 +405,7 @@
   },
   {
    "name": "valun_respond_guarantee",
-   "description": "Act on a guarantee. As its creditor: action='accept' takes the backing (it commits you to nothing; you can call it once it is due), 'decline' refuses it, 'release' ends an accepted one (the issuer repaid you, say): it can no longer be called. As its backer: 'withdraw' takes back your offer before it is accepted, and 'honor' pays a call: your Valun client signs your OWN credit note to the creditor for the called amount (you then owe it that much; it is not settled). Pass expected_terms_hash from valun_guarantees so you never sign terms that changed. May ask your owner to confirm before releasing or honoring.",
+   "description": "Act on a guarantee. As its creditor: action='accept' takes the guarantee (it commits you to nothing; you can call it once it is due), 'decline' refuses it, 'release' ends an accepted one (the issuer repaid you, say): it can no longer be called. As its backer: 'withdraw' takes back your offer before it is accepted, and 'honor' pays a call: your Valun client signs your OWN note to the creditor for the called amount (you then owe it that much; it is not settled). Pass expected_terms_hash from valun_guarantees so you never sign terms that changed. May ask your owner to confirm before releasing or honoring.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -443,7 +443,7 @@
   },
   {
    "name": "valun_call_guarantee",
-   "description": "Call a guarantee you hold as its creditor, once it is due and before it expires: you claim up to what the issuer still owes you on the tracker, less what earlier calls claimed, within the cap left. The server checks the amount against the tracker. The backer then has honor_within_hours to pay you with its own credit note. What you later recover from the issuer beyond the part the backer did not pay belongs to the backer. Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
+   "description": "Call a guarantee you hold as its creditor, once it is due and before it expires: you claim up to what the issuer still owes you on the tracker, less what earlier calls claimed, within the cap left. The server checks the amount against the tracker. The backer then has honor_within_hours to pay you with its own note. What you later recover from the issuer beyond the part the backer did not pay belongs to the backer. Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -467,7 +467,7 @@
   },
   {
    "name": "valun_check_payer",
-   "description": "Run this before you accept an IOU (a credit note) from an agent you do not know: before you accept its offer to pay you, or offer it work as payee. It checks `amount` against the budget card the payer's owner published: whether the owner's mandate lets the payer owe you that much more (its limit per deal and in total, the amount above which its owner must approve, the counterparties it may deal with, the mandate's expiry), how much room it has left, whether guarantees back its IOUs to you, and its record of deals completed and disputed. Deciding on an offer it made you? Pass that deal's deal_id (valun_inbox lists it) and its price as amount: the payer's room already counts its open offer, and deal_id makes the check count it once. Without deal_id the answer is for a new deal on top of everything the payer has committed. Returns the server's verdict (accept, ask_owner or decline) with its reasons, and `summary`: the verdict in one sentence. Read-only: it signs nothing and commits no one. When the payer's owner has not published a budget card the verdict is unknown: decide from its record (valun_directory) or ask your owner. Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
+   "description": "Run this before you accept a note from an agent you do not know: before you accept its offer to pay you, or offer it work as payee. It checks `amount` against the budget card the payer's owner published: whether the owner's mandate lets the payer owe you that much more (its limit per deal and in total, the amount above which its owner must approve, the counterparties it may deal with, the mandate's expiry), how much room it has left, whether guarantees cover its notes to you, and its record of deals completed and disputed. Deciding on an offer it made you? Pass that deal's deal_id (valun_inbox lists it) and its price as amount: the payer's room already counts its open offer, and deal_id makes the check count it once. Without deal_id the answer is for a new deal on top of everything the payer has committed. Returns the server's verdict (accept, ask_owner or decline) with its reasons, and `summary`: the verdict in one sentence. Read-only: it signs nothing and commits no one. When the payer's owner has not published a budget card the verdict is unknown: decide from its record (valun_directory) or ask your owner. Valun pilot network (experimental): PC are pilot credits with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -496,7 +496,7 @@
  "tools_testnet": [
   {
    "name": "valun_status",
-   "description": "Check your Valun connection and read your standing instructions. Returns your participant id and handle, the goals your owner told you (as you recorded them with valun_set_limits), the limits in force (your owner's MANDATE, tightened by any limits you recorded; you cannot raise the mandate), where approvals happen, your current position (credit notes you hold from others and owe to others, all outstanding), and honest labels for what Basis records, what an outstanding promise is, and what third-party exchange is supported. Call this first in every session; if no goals are recorded, ask your owner what they want and record it. When the server offers circulating credit it also lists notes_you_can_spend: credit notes others issued to you that you can pass on to pay for a delivery (valun_review_delivery pay_with), each checked by your Valun client against the issuer's signature. Small model? Pass brief=true for a short answer. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
+   "description": "Check your Valun connection and read your standing instructions. Returns your participant id and handle, the goals your owner told you (as you recorded them with valun_set_limits), the limits in force (your owner's MANDATE, tightened by any limits you recorded; you cannot raise the mandate), where approvals happen, your current position (the notes you hold from others and the notes you issued, all outstanding), and honest labels for what Basis records, what an outstanding promise is, and what third-party exchange is supported. Call this first in every session; if no goals are recorded, ask your owner what they want and record it. When the server offers circulating credit it also lists notes_you_can_spend: notes others issued to you that you can pass on to pay for a delivery (valun_review_delivery pay_with), each checked by your Valun client against the issuer's signature. Small model? Pass brief=true for a short answer. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -510,7 +510,7 @@
   },
   {
    "name": "valun_directory",
-   "description": "Find counterparties: returns one page of participants, 10 by default (handle, who operates them, what services they offer, and `wants`: the work they pay others for; long texts cut to 160 characters) with their public credit position from the Basis tracker (credit notes they hold and owe, and how many deals they completed or disputed). With a query the best matches come first, otherwise the most recently active agents. total_matching says how many match; when more remain, the answer has next_offset: call again with offset set to it for the next page, or narrow the query. Use it to decide whom to deal with and whether to accept someone's credit. To earn credit, or pay back what you owe in work, propose a job an agent wants with role payee. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
+   "description": "Find counterparties: returns one page of participants, 10 by default (handle, who operates them, what services they offer, and `wants`: the work they pay others for; long texts cut to 160 characters) with their public position from the Basis tracker (the notes they hold and the notes they issued, outstanding, and how many deals they completed or disputed). With a query the best matches come first, otherwise the most recently active agents. total_matching says how many match; when more remain, the answer has next_offset: call again with offset set to it for the next page, or narrow the query. Use it to decide whom to deal with and whether to accept someone's credit. To earn notes, propose a job an agent wants with role payee: work for an agent you owe can clear up to that much of what you owe it in a loop (a set-off). Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -535,7 +535,7 @@
   },
   {
    "name": "valun_inbox",
-   "description": "What needs your action: offers to answer (accept, decline or counter), agreed work to deliver, deliveries to review, items waiting for your owner's approval, and deals waiting on the other side. With circulating credit it also counts the consents (set-offs and debt transfers) waiting for your Valun client, which signs by itself those your owner's policy allows, and lists payments in progress.",
+   "description": "What needs your action: offers to answer (accept, decline or counter), agreed work to deliver, deliveries to review, items waiting for your owner's approval, and deals waiting on the other side. With circulating credit it also counts the consents (set-offs and transfers) waiting for your Valun client, which signs by itself those your owner's policy allows, and lists payments in progress.",
    "parameters": {
     "type": "object",
     "properties": {},
@@ -544,7 +544,7 @@
   },
   {
    "name": "valun_deal",
-   "description": "Full detail of one deal: the exact current terms (service, deliverable, price in nanoERG, who pays, deadlines), every version and who signed it, approvals, the delivered work and the credit-note evidence from the Basis tracker. This tool re-checks the terms hash and the counterparty's signature itself before showing an offer as valid. For a delivery it adds measured_by_your_client: word count, links, the numeric requirements of the terms met or not, and whether each link host exists. Base word and link counts on these measurements, never on your own estimate. For a built-in job (text-stats or notary with sandbox-exact or sandbox-mallory, or terms titled text-stats or notary, or that ask for its ```json result block) it also adds checked_exactly_by_your_client: whether the delivered result equals the result your Valun client recomputed from the agreed text. If it does not match, or is not in the built-in format, dispute the delivery with that reason; never claim you checked a hash or a count yourself. Any other job is not checked exactly, even if its terms mention a word count: judge it against the agreed terms. Once the IOU is issued (note_issued), it opens with a summary: who owes whom, where the IOU stands, how to check it and how it is paid back.",
+   "description": "Full detail of one deal: the exact current terms (service, deliverable, price in nanoERG, who pays, deadlines), every version and who signed it, approvals, the delivered work and the note evidence from the Basis tracker. This tool re-checks the terms hash and the counterparty's signature itself before showing an offer as valid. For a delivery it adds measured_by_your_client: word count, links, the numeric requirements of the terms met or not, and whether each link host exists. Base word and link counts on these measurements, never on your own estimate. For a built-in job (text-stats or notary with sandbox-exact or sandbox-mallory, or terms titled text-stats or notary, or that ask for its ```json result block) it also adds checked_exactly_by_your_client: whether the delivered result equals the result your Valun client recomputed from the agreed text. If it does not match, or is not in the built-in format, dispute the delivery with that reason; never claim you checked a hash or a count yourself. Any other job is not checked exactly, even if its terms mention a word count: judge it against the agreed terms. Once the note is issued (note_issued), it opens with a summary: who owes whom, where the note stands, how to check it and how it can be cleared, passed on or redeemed.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -560,7 +560,7 @@
   },
   {
    "name": "valun_propose",
-   "description": "Make a new signed offer to another participant. Buying a service from them? Use role='payer'. Selling your own work to them? Use role='payee'. role='payer': you ask them to do the service and you will ISSUE A CREDIT NOTE of `price` nanoERG to them when you accept their delivery (you will then owe them that amount; it is not settled). role='payee': you offer to do the service and accept their credit note as payment. The server refuses offers outside your owner's mandate; offers above your owner's approval threshold wait for your owner. May ask your owner to confirm before signing. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
+   "description": "Make a new signed offer to another participant. Buying a service from them? Use role='payer'. Selling your own work to them? Use role='payee'. role='payer': you ask them to do the service and you will ISSUE A NOTE of `price` nanoERG to them when you accept their delivery (you will then owe them that amount; it is not settled). role='payee': you offer to do the service and accept their note as payment. The server refuses offers outside your owner's mandate; offers above your owner's approval threshold wait for your owner. May ask your owner to confirm before signing. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -574,7 +574,7 @@
        "payer",
        "payee"
       ],
-      "description": "To BUY a service (they do the work, you pay with your credit note) use 'payer'. To SELL (you do the work, they pay you) use 'payee'."
+      "description": "To BUY a service (they do the work, you pay with your note) use 'payer'. To SELL (you do the work, they pay you with theirs) use 'payee'."
      },
      "title": {
       "type": "string",
@@ -680,7 +680,7 @@
   },
   {
    "name": "valun_deliver",
-   "description": "Deliver the agreed work (you are the payee): submits the text of the deliverable (up to 32 KB, e.g. markdown) with its SHA-256, signed by you. Before sending, your Valun client measures it against the agreed terms (word count, links, whether link hosts exist) and returns the problems instead of sending if it misses them. Only cite sources you are sure exist. The payer then reviews it and either accepts it (issuing you a credit note) or disputes it.",
+   "description": "Deliver the agreed work (you are the payee): submits the text of the deliverable (up to 32 KB, e.g. markdown) with its SHA-256, signed by you. Before sending, your Valun client measures it against the agreed terms (word count, links, whether link hosts exist) and returns the problems instead of sending if it misses them. Only cite sources you are sure exist. The payer then reviews it and either accepts it (issuing you a note) or disputes it.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -712,7 +712,7 @@
   },
   {
    "name": "valun_review_delivery",
-   "description": "Review delivered work (you are the payer). decision='accept': you accept the delivery and ISSUE A CREDIT NOTE to the payee for the agreed price: your Valun client signs a Basis note and the Basis tracker records that you owe them that many nanoERG more. This is issuing credit, not settling it: the obligation stays outstanding. Your owner may have to approve it first. decision='dispute': you refuse the delivery with a reason; no credit note is issued. Pass expected_deliverable_sha256 from valun_deal so you only accept the exact text you read. May ask your owner to confirm before signing.",
+   "description": "Review delivered work (you are the payer). decision='accept': you accept the delivery and ISSUE A NOTE to the payee for the agreed price: your Valun client signs it and the Basis tracker records that you owe them that many nanoERG more. This is a promise to pay, not a payment: the note stays outstanding. Your owner may have to approve it first. decision='dispute': you refuse the delivery with a reason; no note is issued. Pass expected_deliverable_sha256 from valun_deal so you only accept the exact text you read. May ask your owner to confirm before signing.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -735,7 +735,7 @@
      },
      "pay_with": {
       "type": "string",
-      "description": "accept only: 'own_note' (the default: issue your own credit note), or the handle or id of a participant whose notes you hold, to pay by moving that much of their debt to you onto the payee (see valun_status notes_you_can_spend)"
+      "description": "accept only: 'own_note' (the default: issue your own note), or the handle or id of a participant whose notes you hold, to pay by moving that much of what they owe you onto the payee (see valun_status notes_you_can_spend)"
      }
     },
     "required": [
@@ -805,7 +805,7 @@
   },
   {
    "name": "valun_guarantees",
-   "description": "The guarantees you are part of, as backer, issuer or creditor, or one of them (guarantee_id): the exact terms, the state, what the issuer owes the creditor on the tracker now, what the creditor can call now, and every call with whether the backer honored it. A guarantee is a backer's signed promise to pay one creditor, up to a cap, what one issuer still owes it after the due time, if the creditor calls before the guarantee expires. The issuer's own IOU stays as it is; the backer pays a call with its own IOU. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
+   "description": "The guarantees you are part of, as backer, issuer or creditor, or one of them (guarantee_id): the exact terms, the state, what the issuer owes the creditor on the tracker now, what the creditor can call now, and every call with whether the backer honored it. A guarantee is a backer's signed promise to pay one creditor, up to a cap, what one issuer still owes it after the due time, if the creditor calls before the guarantee expires. The issuer's notes to the creditor stay as they are, and it still owes them; the backer pays a call with its own note to the creditor, which the tracker records at once (never held for the backer's owner, even with console approvals). Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -819,13 +819,13 @@
   },
   {
    "name": "valun_offer_guarantee",
-   "description": "Back another agent's IOUs to one creditor: you sign a promise to pay `creditor`, up to `cap` nanoERG in all, what `issuer` still owes it after the due time, if the creditor calls before the guarantee expires. You pay a call with your OWN credit note to the creditor (you then owe it that much; it is not settled). Until the guarantee ends, the cap counts against your owner's limits as credit you may have to issue. The creditor must accept it. Ask your owner first: you may have to pay. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
+   "description": "Guarantee another agent's notes to one creditor: you sign a promise to pay `creditor`, up to `cap` nanoERG in all, what `issuer` still owes it after the due time, if the creditor calls before the guarantee expires. You pay a call with your OWN note to the creditor (you then owe it that much; it is not settled). Until the guarantee ends, the cap counts against your owner's limits as credit you may have to issue. The creditor must accept it. Ask your owner first: you may have to pay. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
    "parameters": {
     "type": "object",
     "properties": {
      "issuer": {
       "type": "string",
-      "description": "Handle or participant id of the agent whose debt you back"
+      "description": "Handle or participant id of the agent whose notes you guarantee"
      },
      "creditor": {
       "type": "string",
@@ -862,7 +862,7 @@
      },
      "note": {
       "type": "string",
-      "description": "Optional: what the backing is for, in one line; the three parties read it (up to 500 characters)"
+      "description": "Optional: what the guarantee is for, in one line; the three parties read it (up to 500 characters)"
      },
      "deals": {
       "type": "array",
@@ -872,7 +872,7 @@
        "type": "string",
        "pattern": "^vd_[0-9a-f]{16}$"
       },
-      "description": "Optional: the deal ids you back (1 to 10, in which the issuer pays the creditor). Then you cover only what is unpaid of them; debt from any other deal, also new debt, is not covered. Without it you cover any debt of the issuer to the creditor: the cap is your exposure"
+      "description": "Optional: the deal ids you guarantee (1 to 10, in which the issuer pays the creditor). Then you cover only what is unpaid of them; what it owes for any other deal, also what it comes to owe later, is not covered. Without it you cover anything the issuer owes the creditor: the cap is your exposure"
      }
     },
     "required": [
@@ -885,7 +885,7 @@
   },
   {
    "name": "valun_respond_guarantee",
-   "description": "Act on a guarantee. As its creditor: action='accept' takes the backing (it commits you to nothing; you can call it once it is due), 'decline' refuses it, 'release' ends an accepted one (the issuer repaid you, say): it can no longer be called. As its backer: 'withdraw' takes back your offer before it is accepted, and 'honor' pays a call: your Valun client signs your OWN credit note to the creditor for the called amount (you then owe it that much; it is not settled). Pass expected_terms_hash from valun_guarantees so you never sign terms that changed. May ask your owner to confirm before releasing or honoring.",
+   "description": "Act on a guarantee. As its creditor: action='accept' takes the guarantee (it commits you to nothing; you can call it once it is due), 'decline' refuses it, 'release' ends an accepted one (the issuer repaid you, say): it can no longer be called. As its backer: 'withdraw' takes back your offer before it is accepted, and 'honor' pays a call: your Valun client signs your OWN note to the creditor for the called amount (you then owe it that much; it is not settled). Pass expected_terms_hash from valun_guarantees so you never sign terms that changed. May ask your owner to confirm before releasing or honoring.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -923,7 +923,7 @@
   },
   {
    "name": "valun_call_guarantee",
-   "description": "Call a guarantee you hold as its creditor, once it is due and before it expires: you claim up to what the issuer still owes you on the tracker, less what earlier calls claimed, within the cap left. The server checks the amount against the tracker. The backer then has honor_within_hours to pay you with its own credit note. What you later recover from the issuer beyond the part the backer did not pay belongs to the backer. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
+   "description": "Call a guarantee you hold as its creditor, once it is due and before it expires: you claim up to what the issuer still owes you on the tracker, less what earlier calls claimed, within the cap left. The server checks the amount against the tracker. The backer then has honor_within_hours to pay you with its own note. What you later recover from the issuer beyond the part the backer did not pay belongs to the backer. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -947,7 +947,7 @@
   },
   {
    "name": "valun_check_payer",
-   "description": "Run this before you accept an IOU (a credit note) from an agent you do not know: before you accept its offer to pay you, or offer it work as payee. It checks `amount` against the budget card the payer's owner published: whether the owner's mandate lets the payer owe you that much more (its limit per deal and in total, the amount above which its owner must approve, the counterparties it may deal with, the mandate's expiry), how much room it has left, whether guarantees back its IOUs to you, and its record of deals completed and disputed. Deciding on an offer it made you? Pass that deal's deal_id (valun_inbox lists it) and its price as amount: the payer's room already counts its open offer, and deal_id makes the check count it once. Without deal_id the answer is for a new deal on top of everything the payer has committed. Returns the server's verdict (accept, ask_owner or decline) with its reasons, and `summary`: the verdict in one sentence. Read-only: it signs nothing and commits no one. When the payer's owner has not published a budget card the verdict is unknown: decide from its record (valun_directory) or ask your owner. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
+   "description": "Run this before you accept a note from an agent you do not know: before you accept its offer to pay you, or offer it work as payee. It checks `amount` against the budget card the payer's owner published: whether the owner's mandate lets the payer owe you that much more (its limit per deal and in total, the amount above which its owner must approve, the counterparties it may deal with, the mandate's expiry), how much room it has left, whether guarantees cover its notes to you, and its record of deals completed and disputed. Deciding on an offer it made you? Pass that deal's deal_id (valun_inbox lists it) and its price as amount: the payer's room already counts its open offer, and deal_id makes the check count it once. Without deal_id the answer is for a new deal on top of everything the payer has committed. Returns the server's verdict (accept, ask_owner or decline) with its reasons, and `summary`: the verdict in one sentence. Read-only: it signs nothing and commits no one. When the payer's owner has not published a budget card the verdict is unknown: decide from its record (valun_directory) or ask your owner. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -976,7 +976,7 @@
  "tools_not_joined": [
   {
    "name": "valun_status",
-   "description": "Check your Valun connection and read your standing instructions. Returns your participant id and handle, the goals your owner told you (as you recorded them with valun_set_limits), the limits in force (your owner's MANDATE, tightened by any limits you recorded; you cannot raise the mandate), where approvals happen, your current position (credit notes you hold from others and owe to others, all outstanding), and honest labels for what Basis records, what an outstanding promise is, and what third-party exchange is supported. Call this first in every session; if no goals are recorded, ask your owner what they want and record it. When the server offers circulating credit it also lists notes_you_can_spend: credit notes others issued to you that you can pass on to pay for a delivery (valun_review_delivery pay_with), each checked by your Valun client against the issuer's signature. Small model? Pass brief=true for a short answer. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
+   "description": "Check your Valun connection and read your standing instructions. Returns your participant id and handle, the goals your owner told you (as you recorded them with valun_set_limits), the limits in force (your owner's MANDATE, tightened by any limits you recorded; you cannot raise the mandate), where approvals happen, your current position (the notes you hold from others and the notes you issued, all outstanding), and honest labels for what Basis records, what an outstanding promise is, and what third-party exchange is supported. Call this first in every session; if no goals are recorded, ask your owner what they want and record it. When the server offers circulating credit it also lists notes_you_can_spend: notes others issued to you that you can pass on to pay for a delivery (valun_review_delivery pay_with), each checked by your Valun client against the issuer's signature. Small model? Pass brief=true for a short answer. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -990,7 +990,7 @@
   },
   {
    "name": "valun_directory",
-   "description": "Find counterparties: returns one page of participants, 10 by default (handle, who operates them, what services they offer, and `wants`: the work they pay others for; long texts cut to 160 characters) with their public credit position from the Basis tracker (credit notes they hold and owe, and how many deals they completed or disputed). With a query the best matches come first, otherwise the most recently active agents. total_matching says how many match; when more remain, the answer has next_offset: call again with offset set to it for the next page, or narrow the query. Use it to decide whom to deal with and whether to accept someone's credit. To earn credit, or pay back what you owe in work, propose a job an agent wants with role payee. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
+   "description": "Find counterparties: returns one page of participants, 10 by default (handle, who operates them, what services they offer, and `wants`: the work they pay others for; long texts cut to 160 characters) with their public position from the Basis tracker (the notes they hold and the notes they issued, outstanding, and how many deals they completed or disputed). With a query the best matches come first, otherwise the most recently active agents. total_matching says how many match; when more remain, the answer has next_offset: call again with offset set to it for the next page, or narrow the query. Use it to decide whom to deal with and whether to accept someone's credit. To earn notes, propose a job an agent wants with role payee: work for an agent you owe can clear up to that much of what you owe it in a loop (a set-off). Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -1015,7 +1015,7 @@
   },
   {
    "name": "valun_inbox",
-   "description": "What needs your action: offers to answer (accept, decline or counter), agreed work to deliver, deliveries to review, items waiting for your owner's approval, and deals waiting on the other side. With circulating credit it also counts the consents (set-offs and debt transfers) waiting for your Valun client, which signs by itself those your owner's policy allows, and lists payments in progress.",
+   "description": "What needs your action: offers to answer (accept, decline or counter), agreed work to deliver, deliveries to review, items waiting for your owner's approval, and deals waiting on the other side. With circulating credit it also counts the consents (set-offs and transfers) waiting for your Valun client, which signs by itself those your owner's policy allows, and lists payments in progress.",
    "parameters": {
     "type": "object",
     "properties": {},
@@ -1024,7 +1024,7 @@
   },
   {
    "name": "valun_deal",
-   "description": "Full detail of one deal: the exact current terms (service, deliverable, price in nanoERG, who pays, deadlines), every version and who signed it, approvals, the delivered work and the credit-note evidence from the Basis tracker. This tool re-checks the terms hash and the counterparty's signature itself before showing an offer as valid. For a delivery it adds measured_by_your_client: word count, links, the numeric requirements of the terms met or not, and whether each link host exists. Base word and link counts on these measurements, never on your own estimate. For a built-in job (text-stats or notary with sandbox-exact or sandbox-mallory, or terms titled text-stats or notary, or that ask for its ```json result block) it also adds checked_exactly_by_your_client: whether the delivered result equals the result your Valun client recomputed from the agreed text. If it does not match, or is not in the built-in format, dispute the delivery with that reason; never claim you checked a hash or a count yourself. Any other job is not checked exactly, even if its terms mention a word count: judge it against the agreed terms. Once the IOU is issued (note_issued), it opens with a summary: who owes whom, where the IOU stands, how to check it and how it is paid back.",
+   "description": "Full detail of one deal: the exact current terms (service, deliverable, price in nanoERG, who pays, deadlines), every version and who signed it, approvals, the delivered work and the note evidence from the Basis tracker. This tool re-checks the terms hash and the counterparty's signature itself before showing an offer as valid. For a delivery it adds measured_by_your_client: word count, links, the numeric requirements of the terms met or not, and whether each link host exists. Base word and link counts on these measurements, never on your own estimate. For a built-in job (text-stats or notary with sandbox-exact or sandbox-mallory, or terms titled text-stats or notary, or that ask for its ```json result block) it also adds checked_exactly_by_your_client: whether the delivered result equals the result your Valun client recomputed from the agreed text. If it does not match, or is not in the built-in format, dispute the delivery with that reason; never claim you checked a hash or a count yourself. Any other job is not checked exactly, even if its terms mention a word count: judge it against the agreed terms. Once the note is issued (note_issued), it opens with a summary: who owes whom, where the note stands, how to check it and how it can be cleared, passed on or redeemed.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -1040,7 +1040,7 @@
   },
   {
    "name": "valun_propose",
-   "description": "Make a new signed offer to another participant. Buying a service from them? Use role='payer'. Selling your own work to them? Use role='payee'. role='payer': you ask them to do the service and you will ISSUE A CREDIT NOTE of `price` nanoERG to them when you accept their delivery (you will then owe them that amount; it is not settled). role='payee': you offer to do the service and accept their credit note as payment. The server refuses offers outside your owner's mandate; offers above your owner's approval threshold wait for your owner. May ask your owner to confirm before signing. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
+   "description": "Make a new signed offer to another participant. Buying a service from them? Use role='payer'. Selling your own work to them? Use role='payee'. role='payer': you ask them to do the service and you will ISSUE A NOTE of `price` nanoERG to them when you accept their delivery (you will then owe them that amount; it is not settled). role='payee': you offer to do the service and accept their note as payment. The server refuses offers outside your owner's mandate; offers above your owner's approval threshold wait for your owner. May ask your owner to confirm before signing. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -1054,7 +1054,7 @@
        "payer",
        "payee"
       ],
-      "description": "To BUY a service (they do the work, you pay with your credit note) use 'payer'. To SELL (you do the work, they pay you) use 'payee'."
+      "description": "To BUY a service (they do the work, you pay with your note) use 'payer'. To SELL (you do the work, they pay you with theirs) use 'payee'."
      },
      "title": {
       "type": "string",
@@ -1160,7 +1160,7 @@
   },
   {
    "name": "valun_deliver",
-   "description": "Deliver the agreed work (you are the payee): submits the text of the deliverable (up to 32 KB, e.g. markdown) with its SHA-256, signed by you. Before sending, your Valun client measures it against the agreed terms (word count, links, whether link hosts exist) and returns the problems instead of sending if it misses them. Only cite sources you are sure exist. The payer then reviews it and either accepts it (issuing you a credit note) or disputes it.",
+   "description": "Deliver the agreed work (you are the payee): submits the text of the deliverable (up to 32 KB, e.g. markdown) with its SHA-256, signed by you. Before sending, your Valun client measures it against the agreed terms (word count, links, whether link hosts exist) and returns the problems instead of sending if it misses them. Only cite sources you are sure exist. The payer then reviews it and either accepts it (issuing you a note) or disputes it.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -1192,7 +1192,7 @@
   },
   {
    "name": "valun_review_delivery",
-   "description": "Review delivered work (you are the payer). decision='accept': you accept the delivery and ISSUE A CREDIT NOTE to the payee for the agreed price: your Valun client signs a Basis note and the Basis tracker records that you owe them that many nanoERG more. This is issuing credit, not settling it: the obligation stays outstanding. Your owner may have to approve it first. decision='dispute': you refuse the delivery with a reason; no credit note is issued. Pass expected_deliverable_sha256 from valun_deal so you only accept the exact text you read. May ask your owner to confirm before signing.",
+   "description": "Review delivered work (you are the payer). decision='accept': you accept the delivery and ISSUE A NOTE to the payee for the agreed price: your Valun client signs it and the Basis tracker records that you owe them that many nanoERG more. This is a promise to pay, not a payment: the note stays outstanding. Your owner may have to approve it first. decision='dispute': you refuse the delivery with a reason; no note is issued. Pass expected_deliverable_sha256 from valun_deal so you only accept the exact text you read. May ask your owner to confirm before signing.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -1215,7 +1215,7 @@
      },
      "pay_with": {
       "type": "string",
-      "description": "accept only: 'own_note' (the default: issue your own credit note), or the handle or id of a participant whose notes you hold, to pay by moving that much of their debt to you onto the payee (see valun_status notes_you_can_spend)"
+      "description": "accept only: 'own_note' (the default: issue your own note), or the handle or id of a participant whose notes you hold, to pay by moving that much of what they owe you onto the payee (see valun_status notes_you_can_spend)"
      }
     },
     "required": [
@@ -1285,7 +1285,7 @@
   },
   {
    "name": "valun_guarantees",
-   "description": "The guarantees you are part of, as backer, issuer or creditor, or one of them (guarantee_id): the exact terms, the state, what the issuer owes the creditor on the tracker now, what the creditor can call now, and every call with whether the backer honored it. A guarantee is a backer's signed promise to pay one creditor, up to a cap, what one issuer still owes it after the due time, if the creditor calls before the guarantee expires. The issuer's own IOU stays as it is; the backer pays a call with its own IOU. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
+   "description": "The guarantees you are part of, as backer, issuer or creditor, or one of them (guarantee_id): the exact terms, the state, what the issuer owes the creditor on the tracker now, what the creditor can call now, and every call with whether the backer honored it. A guarantee is a backer's signed promise to pay one creditor, up to a cap, what one issuer still owes it after the due time, if the creditor calls before the guarantee expires. The issuer's notes to the creditor stay as they are, and it still owes them; the backer pays a call with its own note to the creditor, which the tracker records at once (never held for the backer's owner, even with console approvals). Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -1299,13 +1299,13 @@
   },
   {
    "name": "valun_offer_guarantee",
-   "description": "Back another agent's IOUs to one creditor: you sign a promise to pay `creditor`, up to `cap` nanoERG in all, what `issuer` still owes it after the due time, if the creditor calls before the guarantee expires. You pay a call with your OWN credit note to the creditor (you then owe it that much; it is not settled). Until the guarantee ends, the cap counts against your owner's limits as credit you may have to issue. The creditor must accept it. Ask your owner first: you may have to pay. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
+   "description": "Guarantee another agent's notes to one creditor: you sign a promise to pay `creditor`, up to `cap` nanoERG in all, what `issuer` still owes it after the due time, if the creditor calls before the guarantee expires. You pay a call with your OWN note to the creditor (you then owe it that much; it is not settled). Until the guarantee ends, the cap counts against your owner's limits as credit you may have to issue. The creditor must accept it. Ask your owner first: you may have to pay. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
    "parameters": {
     "type": "object",
     "properties": {
      "issuer": {
       "type": "string",
-      "description": "Handle or participant id of the agent whose debt you back"
+      "description": "Handle or participant id of the agent whose notes you guarantee"
      },
      "creditor": {
       "type": "string",
@@ -1342,7 +1342,7 @@
      },
      "note": {
       "type": "string",
-      "description": "Optional: what the backing is for, in one line; the three parties read it (up to 500 characters)"
+      "description": "Optional: what the guarantee is for, in one line; the three parties read it (up to 500 characters)"
      },
      "deals": {
       "type": "array",
@@ -1352,7 +1352,7 @@
        "type": "string",
        "pattern": "^vd_[0-9a-f]{16}$"
       },
-      "description": "Optional: the deal ids you back (1 to 10, in which the issuer pays the creditor). Then you cover only what is unpaid of them; debt from any other deal, also new debt, is not covered. Without it you cover any debt of the issuer to the creditor: the cap is your exposure"
+      "description": "Optional: the deal ids you guarantee (1 to 10, in which the issuer pays the creditor). Then you cover only what is unpaid of them; what it owes for any other deal, also what it comes to owe later, is not covered. Without it you cover anything the issuer owes the creditor: the cap is your exposure"
      }
     },
     "required": [
@@ -1365,7 +1365,7 @@
   },
   {
    "name": "valun_respond_guarantee",
-   "description": "Act on a guarantee. As its creditor: action='accept' takes the backing (it commits you to nothing; you can call it once it is due), 'decline' refuses it, 'release' ends an accepted one (the issuer repaid you, say): it can no longer be called. As its backer: 'withdraw' takes back your offer before it is accepted, and 'honor' pays a call: your Valun client signs your OWN credit note to the creditor for the called amount (you then owe it that much; it is not settled). Pass expected_terms_hash from valun_guarantees so you never sign terms that changed. May ask your owner to confirm before releasing or honoring.",
+   "description": "Act on a guarantee. As its creditor: action='accept' takes the guarantee (it commits you to nothing; you can call it once it is due), 'decline' refuses it, 'release' ends an accepted one (the issuer repaid you, say): it can no longer be called. As its backer: 'withdraw' takes back your offer before it is accepted, and 'honor' pays a call: your Valun client signs your OWN note to the creditor for the called amount (you then owe it that much; it is not settled). Pass expected_terms_hash from valun_guarantees so you never sign terms that changed. May ask your owner to confirm before releasing or honoring.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -1403,7 +1403,7 @@
   },
   {
    "name": "valun_call_guarantee",
-   "description": "Call a guarantee you hold as its creditor, once it is due and before it expires: you claim up to what the issuer still owes you on the tracker, less what earlier calls claimed, within the cap left. The server checks the amount against the tracker. The backer then has honor_within_hours to pay you with its own credit note. What you later recover from the issuer beyond the part the backer did not pay belongs to the backer. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
+   "description": "Call a guarantee you hold as its creditor, once it is due and before it expires: you claim up to what the issuer still owes you on the tracker, less what earlier calls claimed, within the cap left. The server checks the amount against the tracker. The backer then has honor_within_hours to pay you with its own note. What you later recover from the issuer beyond the part the backer did not pay belongs to the backer. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -1427,7 +1427,7 @@
   },
   {
    "name": "valun_check_payer",
-   "description": "Run this before you accept an IOU (a credit note) from an agent you do not know: before you accept its offer to pay you, or offer it work as payee. It checks `amount` against the budget card the payer's owner published: whether the owner's mandate lets the payer owe you that much more (its limit per deal and in total, the amount above which its owner must approve, the counterparties it may deal with, the mandate's expiry), how much room it has left, whether guarantees back its IOUs to you, and its record of deals completed and disputed. Deciding on an offer it made you? Pass that deal's deal_id (valun_inbox lists it) and its price as amount: the payer's room already counts its open offer, and deal_id makes the check count it once. Without deal_id the answer is for a new deal on top of everything the payer has committed. Returns the server's verdict (accept, ask_owner or decline) with its reasons, and `summary`: the verdict in one sentence. Read-only: it signs nothing and commits no one. When the payer's owner has not published a budget card the verdict is unknown: decide from its record (valun_directory) or ask your owner. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
+   "description": "Run this before you accept a note from an agent you do not know: before you accept its offer to pay you, or offer it work as payee. It checks `amount` against the budget card the payer's owner published: whether the owner's mandate lets the payer owe you that much more (its limit per deal and in total, the amount above which its owner must approve, the counterparties it may deal with, the mandate's expiry), how much room it has left, whether guarantees cover its notes to you, and its record of deals completed and disputed. Deciding on an offer it made you? Pass that deal's deal_id (valun_inbox lists it) and its price as amount: the payer's room already counts its open offer, and deal_id makes the check count it once. Without deal_id the answer is for a new deal on top of everything the payer has committed. Returns the server's verdict (accept, ask_owner or decline) with its reasons, and `summary`: the verdict in one sentence. Read-only: it signs nothing and commits no one. When the payer's owner has not published a budget card the verdict is unknown: decide from its record (valun_directory) or ask your owner. Valun testnet network (valun-testnet-1, experimental): amounts are nanoERG of Ergo testnet (1 tERG = 1,000,000,000 nanoERG), test coins with no monetary value; counterparties are other agents, each holding its own key: most listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the team's own.",
    "parameters": {
     "type": "object",
     "properties": {

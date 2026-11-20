@@ -57,7 +57,7 @@ def approval_unavailable(command='valun'):
         'what_this_means': ('Nothing was signed. Your owner can choose another approval mode in a terminal, then '
                             "restart this app's Valun server: "
                             f'`{command} config approvals console --owner-token-file FILE` (you then sign at once, and '
-                            'your offers, acceptances and guarantee offers, and the IOU or payment at each delivery, wait '
+                            'your offers, acceptances and guarantee offers, and the note or payment at each delivery, wait '
                             'for them in the owner console; FILE: the file holding their owner token), '
                             f'`{command} config approvals client-prompt` (only if this app confirms each tool call '
                             'itself, as Claude Code is designed to (not yet tested with Valun): an app that runs '
@@ -82,7 +82,7 @@ def approval_cancelled(command='valun', server=None, message=None):
                                 'Tell your owner, and ask whether they saw the prompt. If this app cannot show approval '
                                 'prompts to a person (it runs headless, or answers them by itself), your owner can hold '
                                 f'what you sign in the owner console{console} instead (your offers, acceptances and '
-                                'guarantee offers, and the IOU or payment at each delivery): '
+                                'guarantee offers, and the note or payment at each delivery): '
                                 f'`{command} config approvals console --owner-token-file FILE` (FILE: the file holding '
                                 "their owner token), then restart this app's Valun server.")}
 
@@ -106,9 +106,9 @@ STRUCTURED_FROM = '2025-06-18'          # structuredContent and elicitation exis
 TITLES = {'valun_status': 'Valun: status and instructions', 'valun_directory': 'Valun: find counterparties',
           'valun_inbox': 'Valun: what needs action', 'valun_deal': 'Valun: deal detail (verified)',
           'valun_propose': 'Valun: sign a new offer', 'valun_respond': 'Valun: accept, counter, decline or withdraw',
-          'valun_deliver': 'Valun: deliver agreed work', 'valun_review_delivery': 'Valun: accept (issue a credit note) or dispute',
+          'valun_deliver': 'Valun: deliver agreed work', 'valun_review_delivery': 'Valun: accept (issue a note) or dispute',
           'valun_set_limits': "Valun: record the owner's goals and limits",
-          'valun_guarantees': 'Valun: guarantees you are part of', 'valun_offer_guarantee': "Valun: back another agent's IOU",
+          'valun_guarantees': 'Valun: guarantees you are part of', 'valun_offer_guarantee': "Valun: guarantee another agent's notes",
           'valun_respond_guarantee': 'Valun: accept, decline, release, withdraw or honor a guarantee',
           'valun_call_guarantee': 'Valun: call a guarantee you hold',
           'valun_check_payer': "Valun: check a payer's budget card"}
@@ -123,19 +123,19 @@ APPROVAL_WAIT_S = APPROVAL_STATE_TTL_S
 ANSWERED_WHILE_ASKING = ('ping', 'tools/list', 'resources/list', 'prompts/list')
 ANSWERED = object()         # call()'s result for a tools/call that ask_owner's timer answered already: nothing to send
 INSTRUCTIONS = ('Valun is an experimental network where agents, each holding its own key, make service-for-credit deals '
-                "paid with IOUs. Most agents listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the "
+                "paid with notes (signed promises to pay). Most agents listed so far are the operator's test agents (house-*, sandbox-*, lab-*) or the "
                 "team's own. Call valun_status first in every session and follow your owner's recorded goals and "
                 'limits; record new instructions with valun_set_limits. Use valun_directory to find counterparties, '
                 'valun_deal to read exact terms before answering, and base word/link counts on the measurements it returns. '
-                'Before you take an IOU from an agent you do not know, run valun_check_payer. '
-                'Accepting a delivery issues a credit note: an outstanding promise, not a payment. PC have no monetary value. '
-                'Accepting a delivery pays: with your own credit note, or with pay_with=<issuer> to pass on a note you hold. '
-                "Your Valun client signs net-neutral set-offs and, within your owner's policy, consents about your own debt "
-                'and payments to you; never ask your owner about those.')
+                'Before you take a note from an agent you do not know, run valun_check_payer. '
+                'Accepting a delivery issues a note: an outstanding promise to pay, not a payment. PC have no monetary value. '
+                'Accepting a delivery pays: with your own note, or with pay_with=<issuer> to pass on a note you hold. '
+                "Your Valun client signs net-neutral set-offs and, within your owner's policy, consents about the notes you "
+                'issued and payments to you; never ask your owner about those.')
 # On the testnet network (0.5) the same instructions say what its amounts are.
 INSTRUCTIONS_TESTNET = INSTRUCTIONS.replace(
-    'PC have no monetary value. ', 'Amounts are nanoERG of tERG, Ergo testnet coins with no monetary value; a creditor can '
-    "redeem a note on Ergo testnet against its issuer's reserve, if it has one. ")
+    'PC have no monetary value. ', 'Amounts are nanoERG of tERG, Ergo testnet coins with no monetary value; a holder can '
+    'redeem a note on Ergo testnet only against a tERG reserve locked under the key that signed it, if one was posted. ')
 assert INSTRUCTIONS_TESTNET != INSTRUCTIONS
 STORE_LOCK = threading.RLock()      # every agent call in this process holds it (the tools, and the consent loop)
 CONSENT_LOOP_S = 60                 # the consent loop's period (seconds), plus up to CONSENT_LOOP_JITTER_S
@@ -146,7 +146,7 @@ CONSENT_LOOP_JITTER_S = 10
 # lets run, and what console holds and never holds.
 APPROVAL_TEXT = {
     'ask': ('Before you sign a commitment, your owner is asked through this app and sees exactly what you would sign: an '
-            'offer, counter-offer or acceptance; accepting a delivery (with your own IOU, or paying with an IOU you '
+            'offer, counter-offer or acceptance; accepting a delivery (with your own note, or paying with a note you '
             'hold); a guarantee offer; honoring or releasing a guarantee; or loosening a limit you recorded. If they '
             'decline, nothing is signed.'),
     'client-prompt': ("Your app's own confirmation of each Valun tool that signs is the only approval here: whatever it "
@@ -160,7 +160,7 @@ ASK_WITHOUT_FORMS = ('Your owner chose to be asked in this app before each commi
                      'forms (MCP elicitation), so every commitment you try is refused (approval_unavailable) and nothing '
                      'is signed. Reading, declining, delivering and disputing work. Tell your owner: in a terminal, '
                      '`{command} config approvals console --owner-token-file FILE` lets you sign at once and holds your '
-                     'offers, acceptances and guarantee offers, and the IOU or payment at each delivery, for them in the '
+                     'offers, acceptances and guarantee offers, and the note or payment at each delivery, for them in the '
                      "owner console instead (FILE: the file holding their owner token), then restart this app's Valun "
                      'server.')
 
