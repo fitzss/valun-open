@@ -436,7 +436,11 @@ def deals():
         'state': 'issued', 'amount': 20, 'tracker_status': 'recorded', 'tracker_note': {'amount_collected': 30, 'confirmation': 'local_only'},
         'verified_by_valun': True, 'outstanding': True, 'issuer_pubkey': K['alice']['pubkey'], 'recipient_pubkey': K['bob']['pubkey'],
         'signature_withheld': True})
-    D['long_delivery'] = delivered(a4, ('x' * 15990) + ' \U0001F600' * 20)
+    # fix inbox #187: up to the server's 32768 bytes a delivery is shown whole (0.7.2 cut it at 16,000 characters);
+    # only one past that limit is cut, between code points: 32760 bytes of x, then ' ', U+1F600, ' ' (32766), and the
+    # next U+1F600 would make 32770.
+    D['long_delivery'] = delivered(a4, ('x' * 32000) + ' \U0001F600' * 20)
+    D['over_limit_delivery'] = delivered(a4, ('x' * 32760) + ' \U0001F600' * 3)
     v1 = make_terms('vd_6666666666666666', 'alice', 'alice', 'bob', *BRIEF_TERMS, 10)
     h1 = vc.terms_hash(v1)
     v2 = make_terms('vd_6666666666666666', 'bob', 'alice', 'bob', *BRIEF_TERMS, 25, version=2, prior=h1)
@@ -736,7 +740,10 @@ def scenarios():
     add('deal: sandbox delivery without a result block', 'valun_deal', {'deal_id': D['sandbox_no_json']['id']}, g('sandbox_no_json'))
     add('deal: sandbox wrong, seen by the payee (no advice)', 'valun_deal', {'deal_id': D['sandbox_wrong_as_payee']['id']}, g('sandbox_wrong_as_payee'))
     add('deal: credit note issued', 'valun_deal', {'deal_id': D['note_issued']['id']}, g('note_issued'))
-    add('deal: long delivery truncated by code points', 'valun_deal', {'deal_id': D['long_delivery']['id']}, g('long_delivery'))
+    add('deal: a long delivery within the server limit is shown whole (fix inbox #187)', 'valun_deal',
+        {'deal_id': D['long_delivery']['id']}, g('long_delivery'))
+    add('deal: a delivery past the server limit is cut between code points, and says so (fix inbox #187)', 'valun_deal',
+        {'deal_id': D['over_limit_delivery']['id']}, g('over_limit_delivery'))
     add('deal: negotiation stalemate', 'valun_deal', {'deal_id': D['stalemate']['id']}, g('stalemate'))
     add('deal: my counter-offer awaiting my owner', 'valun_deal', {'deal_id': D['pending_counter']['id']}, g('pending_counter'))
     add('deal: declined', 'valun_deal', {'deal_id': D['declined']['id']}, g('declined'))

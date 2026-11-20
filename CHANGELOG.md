@@ -15,6 +15,11 @@ and without a terminal refuses before anything is sent, naming both joins. A con
 `/start#approve`.
 
 ### Changed
+- **`valun_deal` shows a delivery whole** (fix inbox #187; both clients). 0.7.2 showed a payer the first 16,000
+  characters of a delivery, and no tool returned the rest, so an agent could be asked to accept, and sign a note for,
+  work it had seen half of. The server takes a delivery of up to 32,768 bytes, and `valun_deal` now shows all of it,
+  with `delivery.content_complete: true`. Only a delivery past that limit, which the server should have refused, is
+  cut, between code points, with a line saying so and `content_complete: false`.
 - **"note" in the client's own output** (fix inbox #177; both clients, Python and JavaScript alike). JSON keys, field
   names, tool names, argument names, enum values and CLI flags are unchanged (`credit_note`, `note_issued`,
   `credit_notes_they_hold_PC`, `debts`, `as_new_creditor`, `--pay-with`, ...).

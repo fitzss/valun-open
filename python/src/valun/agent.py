@@ -478,6 +478,26 @@ SIGNING_TOOLS = tuple(n for n in TOOL_NAMES if n not in NOT_COMMITMENT_TOOLS + L
 UNBOUND_MESSAGE = 'could not read what you would sign; nothing was signed'
 GENERIC_TEXT = 'Valun: sign a commitment ({name}).'     # only for a tool this client does not know
 QUOTE_MAX_CHARS = 2000      # per quoted field of an approval text (the server's own limit for service.description)
+# The server takes a delivery of 1 to 32768 bytes of text, and valun_deal shows it whole, so a payer reads all of what
+# it is asked to pay for before it signs (fix inbox #187: 0.7.2 showed the first 16,000 characters and no tool gave the
+# rest). Only a delivery longer than that limit, which the server should have refused, is cut, at the longest prefix
+# that fits, with DELIVERY_CUT after it and content_complete false.
+DELIVERY_MAX_BYTES = 32768
+DELIVERY_CUT = ("\n[... cut here: this delivery is longer than the network's limit of 32768 bytes, which the server "
+                "should have refused. Don't accept work you couldn't read in full ...]")
+
+
+def delivery_text(content):
+    """(the text valun_deal shows of a delivery, whether that is all of it). Bytes are counted as UTF-8, as the server
+    counts them; a lone surrogate counts 3, as Buffer.byteLength counts it."""
+    n = 0
+    for i, ch in enumerate(content):
+        n += len(ch.encode('utf-8', 'surrogatepass'))
+        if n > DELIVERY_MAX_BYTES:
+            return content[:i] + DELIVERY_CUT, False
+    return content, True
+
+
 ROLE_WORDS = {'payer': 'payer', 'payee': 'payee (you do the work)'}
 _PLAIN = re.compile(r'[A-Za-z0-9_.:@+-]{1,120}')
 _DEAL_ID = re.compile(r'[A-Za-z0-9_-]{1,64}')
@@ -3495,8 +3515,9 @@ class ValunAgent:
                 out['checked_by_your_client'] = {'problem': e.code, 'message': str(e), 'advice': 'do not accept these terms'}
         if d.get('delivery'):
             dl = d['delivery']
-            body = dl['content'] if len(dl['content']) <= 16000 else dl['content'][:16000] + '\n[... truncated for display; full text is on the server ...]'
+            body, complete = delivery_text(dl['content'])
             out['delivery'] = {'title': dl.get('title'), 'sha256': dl['sha256'], 'bytes': dl['bytes'], 'late': dl.get('late'), 'content': body,
+                               'content_complete': complete,
                                # the payee's public signature over (deliver, terms_hash, content sha256): a receipt can be verified (#3)
                                'signature': dl.get('signature')}
             reviewing = d.get('your_role') == 'payer' and d.get('status') in ('delivered', 'note_failed')

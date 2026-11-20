@@ -456,6 +456,28 @@ export const UNBOUND_MESSAGE = 'could not read what you would sign; nothing was 
 export const GENERIC_TEXT = 'Valun: sign a commitment ({name}).';
 /** Per quoted field of an approval text (the server's own limit for service.description). */
 export const QUOTE_MAX_CHARS = 2000;
+/**
+ * The server takes a delivery of 1 to 32768 bytes of text, and valun_deal shows it whole, so a payer reads all of what
+ * it is asked to pay for before it signs (fix inbox #187: 0.7.2 showed the first 16,000 characters and no tool gave the
+ * rest). Only a delivery longer than that limit, which the server should have refused, is cut, at the longest prefix
+ * that fits, with DELIVERY_CUT after it and content_complete false.
+ */
+export const DELIVERY_MAX_BYTES = 32768;
+export const DELIVERY_CUT = "\n[... cut here: this delivery is longer than the network's limit of 32768 bytes, which the server "
+  + "should have refused. Don't accept work you couldn't read in full ...]";
+
+/** [the text valun_deal shows of a delivery, whether that is all of it]. UTF-8 bytes, as the server counts them (a lone
+ * surrogate counts 3, as Buffer.byteLength counts it); the cut falls between code points, as Python's does. */
+export function deliveryText(content) {
+  let n = 0, i = 0;
+  for (const ch of content) {
+    const cp = ch.codePointAt(0);
+    n += cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
+    if (n > DELIVERY_MAX_BYTES) return [cpSlice(content, i) + DELIVERY_CUT, false];
+    i += 1;
+  }
+  return [content, true];
+}
 export const ROLE_WORDS = Object.freeze({payer: 'payer', payee: 'payee (you do the work)'});
 export const DEFAULT_SETUP_HINT = 'run `valun join` (or `valun enroll`) in a terminal';
 /**
@@ -3744,11 +3766,10 @@ export class ValunAgent {
     if (truthy(get(d, 'delivery'))) {
       const dl = item(d, 'delivery');
       const content = item(dl, 'content');
-      const body = cpLength(content) <= 16000 ? content
-        : cpSlice(content, 16000) + '\n[... truncated for display; full text is on the server ...]';
+      const [body, complete] = deliveryText(content);
       // the payee's public signature over (deliver, terms_hash, content sha256): a receipt can be verified (#3)
       out.delivery = {title: get(dl, 'title'), sha256: item(dl, 'sha256'), bytes: item(dl, 'bytes'), late: get(dl, 'late'), content: body,
-        signature: get(dl, 'signature')};
+        content_complete: complete, signature: get(dl, 'signature')};
       const reviewing = get(d, 'your_role') === 'payer' && ['delivered', 'note_failed'].includes(get(d, 'status'));
       out.delivery.measured_by_your_client = await measure(content, termsText(d), this.#measureOptions(reviewing && this.checkLinkHosts));
       // A built-in job only (the Nov 18 fresh-join run, finding 10: "word count" in a free-form job's terms made a
