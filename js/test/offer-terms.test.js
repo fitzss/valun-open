@@ -247,7 +247,7 @@ test('valun_respond takes offer_valid_hours (a whole number of hours, 1 to 168);
   const {description, ...rest} = props.offer_valid_hours;
   assert.deepEqual(rest, {type: 'integer', minimum: 1, maximum: 168});
   assert.match(description, /^counter only: /);
-  assert.deepEqual(Object.keys(props).slice(-2), ['deliver_within_hours', 'offer_valid_hours']);
+  assert.deepEqual(Object.keys(props).slice(-3), ['deliver_within_hours', 'offer_valid_hours', 'pay_with']);
   assert.deepEqual(schemas.RESPOND.parameters.required, ['deal_id', 'action']);
   assert.equal(TOOL_NAMES.length, 14);
   assert.deepEqual(TOOL_NAMES, schemas.ALL.map(t => t.name));

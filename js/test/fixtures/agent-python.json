@@ -2,17 +2,17 @@
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python": "3.14.7",
  "python_sources_sha256": {
-  "agent.py": "ddbc7f793325785504dcfd7d0353caee331a445692c0ce402720ed805de42e88",
+  "agent.py": "974c63a20c91ea5edc9b3e7ed095674fec5eb9dc436a547fbd0baaed84e67a01",
   "avl.py": "f2ac55e537a29c2cfc7d847012b000f6c452907c788c9da6f92d968d9e03a35a",
   "basis.py": "994db7dd38ff4d9badbb0e3a65825dd8635704b3309e0fcfef1ca14db3c67338",
-  "client.py": "61a1f10919d4a91568279cd029ea634ee2a1704d8dcda6896a24801039d55209",
+  "client.py": "05f5c1e44cc762e00050ee9e1f868aadb9608621df1a7a310550da8012bae3b9",
   "fences.py": "5eff8f249101a89e0c7f90a1339ec1a874302bcc8ce387d7971e4c55c8b875bf",
   "mcp_server.py": "b1f7dcd7cc223bdb6e8abc9cfc3d9fda90534bb604b53fc1c4060be0db25e353",
   "measure.py": "17defc6922409ca1e35b6c6e825dacc43a153f87e2bc4f0aa6442f415813af46",
-  "novation.py": "71c06c3b72c1216d9f1726773cb5f61bcf5202f89817714c76220dafd4f5c19f",
+  "novation.py": "f4d99834f657f4c5f19429f45c2ddac505ed95c4b2867188c66898e47d4c4683",
   "records.py": "fab761bfc0caf3d74494f4c19a55e63daec228aa74c416fa40e2ac1ec20c2054",
   "sandbox.py": "b060002243efa8d57529864b47e5e171efac8309f1050b326899de51cf1eab5a",
-  "schemas.py": "33f4a8bd0e973541ffdd3dd428b676ea771fe7d43c13d49d9e594e198104938f"
+  "schemas.py": "6287bcd66e945286d7cf4c0e08adade52758a0af0e06133af48b069429fc8c04"
  },
  "base": "https://valun.invalid",
  "t0_ms": 1793966400000,
@@ -88720,6 +88720,146 @@
    }
   },
   {
+   "name": "arguments: valun_propose pay_with=42, of another type",
+   "tool": "valun_propose",
+   "args": {
+    "counterparty": "sandbox-exact",
+    "role": "payer",
+    "title": "t",
+    "description": "d",
+    "deliverable": "x",
+    "price": 1,
+    "pay_with": 42
+   },
+   "routes": {},
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "error": "bad_arguments",
+    "message": "pay_with is 'own_note' or the handle or id of the participant whose note the payer will pass on; nothing was signed"
+   },
+   "requests": [],
+   "signed": [],
+   "state_after": {
+    "server": "https://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": true,
+   "prepare": {
+    "raises": "ValunError",
+    "code": "approval_unbound",
+    "message": "could not read what you would sign; nothing was signed",
+    "cause": "bad_arguments"
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    null,
+    {
+     "error": "bad_arguments",
+     "message": "pay_with is 'own_note' or the handle or id of the participant whose note the payer will pass on; nothing was signed"
+    }
+   ],
+   "describe": {
+    "raises": "ValunError",
+    "code": "approval_unbound",
+    "message": "could not read what you would sign; nothing was signed",
+    "cause": "bad_arguments"
+   },
+   "bound": {
+    "value": {
+     "counterparty": "sandbox-exact",
+     "role": "payer",
+     "title": "t",
+     "description": "d",
+     "deliverable": "x",
+     "price": 1,
+     "pay_with": 42
+    }
+   },
+   "bind_requests": [],
+   "describe_bound": {
+    "raises": "ValunError",
+    "code": "approval_unbound",
+    "message": "could not read what you would sign; nothing was signed",
+    "cause": "bad_arguments"
+   }
+  },
+  {
+   "name": "arguments: valun_propose pay_with={\"a\": 1}, of another type",
+   "tool": "valun_propose",
+   "args": {
+    "counterparty": "sandbox-exact",
+    "role": "payer",
+    "title": "t",
+    "description": "d",
+    "deliverable": "x",
+    "price": 1,
+    "pay_with": {
+     "a": 1
+    }
+   },
+   "routes": {},
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "error": "bad_arguments",
+    "message": "pay_with is 'own_note' or the handle or id of the participant whose note the payer will pass on; nothing was signed"
+   },
+   "requests": [],
+   "signed": [],
+   "state_after": {
+    "server": "https://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": true,
+   "prepare": {
+    "raises": "ValunError",
+    "code": "approval_unbound",
+    "message": "could not read what you would sign; nothing was signed",
+    "cause": "bad_arguments"
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    null,
+    {
+     "error": "bad_arguments",
+     "message": "pay_with is 'own_note' or the handle or id of the participant whose note the payer will pass on; nothing was signed"
+    }
+   ],
+   "describe": {
+    "raises": "ValunError",
+    "code": "approval_unbound",
+    "message": "could not read what you would sign; nothing was signed",
+    "cause": "bad_arguments"
+   },
+   "bound": {
+    "value": {
+     "counterparty": "sandbox-exact",
+     "role": "payer",
+     "title": "t",
+     "description": "d",
+     "deliverable": "x",
+     "price": 1,
+     "pay_with": {
+      "a": 1
+     }
+    }
+   },
+   "bind_requests": [],
+   "describe_bound": {
+    "raises": "ValunError",
+    "code": "approval_unbound",
+    "message": "could not read what you would sign; nothing was signed",
+    "cause": "bad_arguments"
+   }
+  },
+  {
    "name": "arguments: valun_respond deal_id=\"vd_1\", of another type",
    "tool": "valun_respond",
    "args": {
@@ -89814,6 +89954,98 @@
     {
      "error": "bad_arguments",
      "message": "offer_valid_hours must be a whole number of hours, at least 1 (a JSON integer), not true; nothing was signed"
+    }
+   ]
+  },
+  {
+   "name": "arguments: valun_respond pay_with=42, of another type",
+   "tool": "valun_respond",
+   "args": {
+    "deal_id": "vd_0000000000000000",
+    "action": "decline",
+    "pay_with": 42
+   },
+   "routes": {},
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "error": "bad_arguments",
+    "message": "pay_with is 'own_note' or the handle or id of the participant whose note the payer will pass on; nothing was signed"
+   },
+   "requests": [],
+   "signed": [],
+   "state_after": {
+    "server": "https://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "deal_id": "vd_0000000000000000",
+      "action": "decline",
+      "pay_with": 42
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    null,
+    {
+     "error": "bad_arguments",
+     "message": "pay_with is 'own_note' or the handle or id of the participant whose note the payer will pass on; nothing was signed"
+    }
+   ]
+  },
+  {
+   "name": "arguments: valun_respond pay_with={\"a\": 1}, of another type",
+   "tool": "valun_respond",
+   "args": {
+    "deal_id": "vd_0000000000000000",
+    "action": "decline",
+    "pay_with": {
+     "a": 1
+    }
+   },
+   "routes": {},
+   "store": "alice",
+   "agent": {},
+   "state": {},
+   "result": {
+    "error": "bad_arguments",
+    "message": "pay_with is 'own_note' or the handle or id of the participant whose note the payer will pass on; nothing was signed"
+   },
+   "requests": [],
+   "signed": [],
+   "state_after": {
+    "server": "https://valun.invalid",
+    "participant_id": "vp_a1a1a1a1a1a1",
+    "pubkey": "035e2b6f7e5a63fc1335cca864db07e5872b9c21f3cafe766a6c1987977221e7b5",
+    "issued": {}
+   },
+   "is_commitment": false,
+   "prepare": {
+    "value": {
+     "args": {
+      "deal_id": "vd_0000000000000000",
+      "action": "decline",
+      "pay_with": {
+       "a": 1
+      }
+     },
+     "text": null
+    }
+   },
+   "prepare_requests": [],
+   "prepare_or_refusal": [
+    null,
+    {
+     "error": "bad_arguments",
+     "message": "pay_with is 'own_note' or the handle or id of the participant whose note the payer will pass on; nothing was signed"
     }
    ]
   },

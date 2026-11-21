@@ -866,6 +866,8 @@ function iterateList(v) {
 
 const TERMS_FIELDS = ['protocol', 'network', 'tracker_nft_id', 'denomination', 'deal_id', 'version', 'prior_terms_hash',
   'nonce', 'proposer', 'payer', 'payee', 'service', 'price', 'consideration', 'deliver_by', 'offer_expires_at'];
+// Terms may also name a payment issuer (fix inbox #192/#196): payment_issuer {id, pubkey}, optional.
+const OPTIONAL_TERMS_FIELDS = ['payment_issuer'];
 
 function exactKeys(o, keys) {
   return isObject(o) && Object.keys(o).length === keys.length && keys.every(k => Object.prototype.hasOwnProperty.call(o, k));
@@ -1957,6 +1959,7 @@ export class Client {
     if (proposerKey !== (t.payer.id === cur.by ? t.payer : t.payee).pubkey) {
       throw new ValunError('wrong_key', 'the proposer key in the terms is not the registered key');
     }
+    if (Object.hasOwn(t, 'payment_issuer')) await this.#checkPaymentIssuer(t);
     if (!verifyHex(cur.signature, utf8(statements.propose(h)), proposerKey)) {
       throw new ValunError('bad_signature', "the proposer's signature does not verify");
     }
@@ -1972,7 +1975,7 @@ export class Client {
     }
     if (t.price.unit !== this.unit || !Number.isSafeInteger(t.price.amount)) throw new ValunError('bad_terms', `the price is not a whole number of ${this.unit}`);
     if (t.consideration !== CONSIDERATION) throw new ValunError('bad_terms', `the consideration is not ${CONSIDERATION}`);
-    if (!exactKeys(t, TERMS_FIELDS) || !exactKeys(t.payer, ['id', 'pubkey']) || !exactKeys(t.payee, ['id', 'pubkey'])
+    if (!exactKeys(t, [...TERMS_FIELDS, ...OPTIONAL_TERMS_FIELDS.filter(k => Object.hasOwn(t, k))]) || !exactKeys(t.payer, ['id', 'pubkey']) || !exactKeys(t.payee, ['id', 'pubkey'])
         || !exactKeys(t.price, ['amount', 'unit']) || !exactKeys(t.service, ['title', 'description', 'deliverable'])
         || !['title', 'description', 'deliverable'].every(k => typeof t.service[k] === 'string')) {
       throw new ValunError('bad_terms', 'the terms have missing or unknown fields; refusing to sign what may not be shown');
@@ -1985,6 +1988,22 @@ export class Client {
       throw new ValunError('bad_terms', 'the offer does not continue the version before it (prior_terms_hash)');
     }
     return {terms_hash: h, proposer_signature_valid: true, terms: t};
+  }
+
+  /**
+   * Terms that name a payment issuer (payment_issuer {id, pubkey}; fix inbox #192/#196): a third participant, neither
+   * party, under its current registered key (bad_terms, wrong_key otherwise).
+   */
+  async #checkPaymentIssuer(t) {
+    const x = t.payment_issuer;
+    if (!(exactKeys(x, ['id', 'pubkey']) && typeof x.id === 'string' && typeof x.pubkey === 'string')) {
+      throw new ValunError('bad_terms', 'the terms name a payment_issuer that is not {id, pubkey}; refusing to sign');
+    }
+    if (x.id === t.payer.id || x.id === t.payee.id) {
+      throw new ValunError('bad_terms', 'the terms name a party of the deal as its payment_issuer; refusing to sign');
+    }
+    if (await this.#registeredKey(x.id) !== x.pubkey) throw new ValunError('wrong_key', "the payment issuer's key in the terms is not its registered key");
+    return x;
   }
 
   /** The agreed terms of a deal view, checked: hash, and both parties' signatures against the keys named in them. */
@@ -2018,9 +2037,12 @@ export class Client {
    * past priorExpiresAt (an RFC 3339 time: the end of the offer a counter-offer answers). Times are whole seconds,
    * rounded down. Terms the server would refuse for their times are refused here first (bad_arguments, fix inbox #23): an
    * offer open longer than the hours it gives to deliver (checkOfferHours), or one already expired when it is sent.
+   * paymentIssuer (a participant id; fix inbox #192/#196): the terms name that participant, under its current registered
+   * key, as the issuer whose note the payer will pass to the payee (payment_issuer {id, pubkey}); neither party may be it
+   * (bad_arguments). Without it the terms are exactly as before.
    */
   async buildTerms({counterpartyId, role, title, description, deliverable, price, deliverByHours = 48, offerTtlHours = 24,
-    dealId = undefined, version = 1, prior = null, priorExpiresAt = null}) {
+    dealId = undefined, version = 1, prior = null, priorExpiresAt = null, paymentIssuer = null}) {
     if (role !== 'payer' && role !== 'payee') {
       throw new ValunError('bad_role', 'role must be payer (you pay with your credit) or payee (you do the work)');
     }
@@ -2044,7 +2066,7 @@ export class Client {
       throw new ValunError('bad_arguments', `the offer would expire at ${expires}, before it is sent: it must stay open `
         + 'for at least 1 h (offer_valid_hours); nothing was signed');
     }
-    return {
+    const t = {
       protocol: PROTOCOL, network: this.network, tracker_nft_id: info.tracker_nft_id, denomination: info.denomination,
       deal_id: dealId || ('vd_' + bytesToHex(this.#randomBytes(8))), version, prior_terms_hash: prior,
       nonce: bytesToHex(this.#randomBytes(16)), proposer: this.participantId,
@@ -2053,11 +2075,24 @@ export class Client {
       price: {amount, unit: this.unit}, consideration: CONSIDERATION,
       deliver_by: isoSeconds(deliverBy), offer_expires_at: expires,
     };
+    if (paymentIssuer !== null && paymentIssuer !== undefined) {
+      if (typeof paymentIssuer !== 'string' || !paymentIssuer) throw new ValunError('bad_arguments', 'the payment issuer is a participant id; nothing was signed');
+      if (paymentIssuer === this.participantId || paymentIssuer === counterpartyId) {
+        throw new ValunError('bad_arguments', 'pay_with must name a third participant, whose note the payer passes on: '
+          + "not the payer (its own note is what an offer without pay_with says) and not the payee; nothing was signed");
+      }
+      t.payment_issuer = {id: paymentIssuer, pubkey: await this.#registeredKey(paymentIssuer)};
+    }
+    return t;
   }
 
-  /** Propose a new deal (version 1), signed by this agent. */
-  async propose({counterpartyId, role, title, description, deliverable, price, deliverByHours = 48, offerTtlHours = 24}) {
-    const t = await this.buildTerms({counterpartyId, role, title, description, deliverable, price, deliverByHours, offerTtlHours});
+  /**
+   * Propose a new deal (version 1), signed by this agent. payWith (a participant id; null or 'own_note': none) names the
+   * payment issuer in the terms (buildTerms paymentIssuer).
+   */
+  async propose({counterpartyId, role, title, description, deliverable, price, deliverByHours = 48, offerTtlHours = 24, payWith = null}) {
+    const t = await this.buildTerms({counterpartyId, role, title, description, deliverable, price, deliverByHours, offerTtlHours,
+      paymentIssuer: payWith === null || payWith === undefined || payWith === 'own_note' ? null : payWith});
     const h = termsHash(t);
     return this.request('POST', '/pilot/v1/deals', {terms: t, terms_hash: h, signature: this.#sign(statements.propose(h))});
   }
@@ -2068,10 +2103,12 @@ export class Client {
    * offer is another. Delivery is due deliverByHours from now, by default by the current offer's deadline (rounded down
    * to the hour, at least 1 h from now). The counter-offer stays open offerTtlHours; by default (fix inbox #23)
    * COUNTER_OFFER_HOURS, but never past its own delivery deadline nor past the end of the offer it answers, so a
-   * price-only counter to an offer due within a day is valid terms too.
+   * price-only counter to an offer due within a day is valid terms too. payWith: null keeps the payment issuer of the
+   * current offer (none when it names none), 'own_note' names none, and a participant id names that participant
+   * (buildTerms paymentIssuer).
    */
   async counter(dealId, {price = undefined, title = undefined, description = undefined, deliverable = undefined,
-    deliverByHours = undefined, offerTtlHours = undefined, expectedTermsHash = undefined} = {}) {
+    deliverByHours = undefined, offerTtlHours = undefined, expectedTermsHash = undefined, payWith = null} = {}) {
     const d = await this.deal(dealId);
     const chk = await this.verifyOffer(d);
     if (truthy(expectedTermsHash ?? null) && expectedTermsHash !== chk.terms_hash) {
@@ -2087,6 +2124,8 @@ export class Client {
       deliverable: deliverable || t0.service.deliverable, price: price ?? t0.price.amount,
       deliverByHours: dueH, offerTtlHours: offerTtlHours ?? null, dealId, version: t0.version + 1, prior: chk.terms_hash,
       priorExpiresAt: t0.offer_expires_at,
+      paymentIssuer: payWith === null || payWith === undefined ? (isObject(t0.payment_issuer) ? t0.payment_issuer.id : null)
+        : payWith === 'own_note' ? null : payWith,
     });
     const h = termsHash(t);
     return this.request('POST', `/pilot/v1/deals/${seg(dealId)}/counter`,
@@ -2174,6 +2213,12 @@ export class Client {
     const d = await this.deal(dealId);
     await this.learnOwnerDecisions(dealId, d);    // a payment held for the owner that ended unreleased is not applied
     const [terms, h, dh] = this.#acceptedDelivery(d, dealId, expectedDeliverableSha256, expectedTermsHash);
+    const named = terms.payment_issuer;
+    if (isObject(named)) {                  // fix inbox #192/#196: these terms are paid only with that issuer's note
+      throw new ValunError('terms_name_payment_issuer', `the agreed terms name ${named.id} as the payment issuer: this deal is paid `
+        + `only by passing on that issuer's note (pay_with=${named.id}), not with a note of your own; nothing was signed`,
+      undefined, {payment_issuer: {id: named.id}});
+    }
     // A pinned (0.4) profile reads /info: a server offering bound_notes/1 takes bound notes, and with any feature the
     // tracker keeps the timestamp residues 995-999 for other operations. Otherwise exactly as 0.3.
     const features = await this.#features();
@@ -2578,6 +2623,12 @@ export class Client {
     const features = await this.#circulation();
     this.#contract();
     const issuerId = await this.#resolveIssuer(dealId, issuer);
+    const named = terms.payment_issuer;
+    if (isObject(named) && named.id !== issuerId) {             // fix inbox #192/#196
+      throw new ValunError('payment_issuer_mismatch', `the agreed terms name ${named.id} as the payment issuer: this deal is paid `
+        + `only with that issuer's note, not ${issuerId}'s (pay_with=${named.id}); nothing was signed`,
+      undefined, {payment_issuer: {id: named.id}, issuer: issuerId});
+    }
     const issuerPk = await this.#registeredKey(issuerId);
     const mandate = mandateOf(await this.me());
     const deal = nv.dealContext(terms, h, dh);

@@ -1,17 +1,17 @@
 {
  "generated_by": "js/test/fixtures/generate_python_fixtures.py",
  "python_sources_sha256": {
-  "agent.py": "ddbc7f793325785504dcfd7d0353caee331a445692c0ce402720ed805de42e88",
+  "agent.py": "974c63a20c91ea5edc9b3e7ed095674fec5eb9dc436a547fbd0baaed84e67a01",
   "avl.py": "f2ac55e537a29c2cfc7d847012b000f6c452907c788c9da6f92d968d9e03a35a",
   "basis.py": "994db7dd38ff4d9badbb0e3a65825dd8635704b3309e0fcfef1ca14db3c67338",
-  "client.py": "61a1f10919d4a91568279cd029ea634ee2a1704d8dcda6896a24801039d55209",
+  "client.py": "05f5c1e44cc762e00050ee9e1f868aadb9608621df1a7a310550da8012bae3b9",
   "fences.py": "5eff8f249101a89e0c7f90a1339ec1a874302bcc8ce387d7971e4c55c8b875bf",
   "mcp_server.py": "b1f7dcd7cc223bdb6e8abc9cfc3d9fda90534bb604b53fc1c4060be0db25e353",
   "measure.py": "17defc6922409ca1e35b6c6e825dacc43a153f87e2bc4f0aa6442f415813af46",
-  "novation.py": "71c06c3b72c1216d9f1726773cb5f61bcf5202f89817714c76220dafd4f5c19f",
+  "novation.py": "f4d99834f657f4c5f19429f45c2ddac505ed95c4b2867188c66898e47d4c4683",
   "records.py": "fab761bfc0caf3d74494f4c19a55e63daec228aa74c416fa40e2ac1ec20c2054",
   "sandbox.py": "b060002243efa8d57529864b47e5e171efac8309f1050b326899de51cf1eab5a",
-  "schemas.py": "33f4a8bd0e973541ffdd3dd428b676ea771fe7d43c13d49d9e594e198104938f"
+  "schemas.py": "6287bcd66e945286d7cf4c0e08adade52758a0af0e06133af48b069429fc8c04"
  },
  "tools": [
   {
@@ -124,6 +124,10 @@
       "minimum": 1,
       "maximum": 168,
       "description": "How long they have to answer (default 24)"
+     },
+     "pay_with": {
+      "type": "string",
+      "description": "Optional: the handle or id of a third participant whose note the payer will pass to the payee, signed into the terms as payment_issuer (the payee sees it before it agrees; the deal is then paid only with that issuer's note). Leave out (or 'own_note') for the payer's own note"
      }
     },
     "required": [
@@ -190,6 +194,10 @@
       "minimum": 1,
       "maximum": 168,
       "description": "counter only: how long they have to answer (default 24, but never past the delivery deadline nor past the end of the offer you answer)"
+     },
+     "pay_with": {
+      "type": "string",
+      "description": "counter only: the handle or id of a third participant whose note the payer will pass to the payee (payment_issuer in the terms), or 'own_note' for none; left out, the counter keeps the payment issuer of their offer"
      }
     },
     "required": [
@@ -255,7 +263,7 @@
      },
      "pay_with": {
       "type": "string",
-      "description": "accept only: 'own_note' (the default: issue your own note), or the handle or id of a participant whose notes you hold, to pay by moving that much of what they owe you onto the payee (see valun_status notes_you_can_spend)"
+      "description": "accept only: 'own_note' (the default: issue your own note), or the handle or id of a participant whose notes you hold, to pay by moving that much of what they owe you onto the payee (see valun_status notes_you_can_spend). When the agreed terms name a payment_issuer, only its note pays the deal: it is the default then, and another value is refused"
      }
     },
     "required": [
@@ -604,6 +612,10 @@
       "minimum": 1,
       "maximum": 168,
       "description": "How long they have to answer (default 24)"
+     },
+     "pay_with": {
+      "type": "string",
+      "description": "Optional: the handle or id of a third participant whose note the payer will pass to the payee, signed into the terms as payment_issuer (the payee sees it before it agrees; the deal is then paid only with that issuer's note). Leave out (or 'own_note') for the payer's own note"
      }
     },
     "required": [
@@ -670,6 +682,10 @@
       "minimum": 1,
       "maximum": 168,
       "description": "counter only: how long they have to answer (default 24, but never past the delivery deadline nor past the end of the offer you answer)"
+     },
+     "pay_with": {
+      "type": "string",
+      "description": "counter only: the handle or id of a third participant whose note the payer will pass to the payee (payment_issuer in the terms), or 'own_note' for none; left out, the counter keeps the payment issuer of their offer"
      }
     },
     "required": [
@@ -735,7 +751,7 @@
      },
      "pay_with": {
       "type": "string",
-      "description": "accept only: 'own_note' (the default: issue your own note), or the handle or id of a participant whose notes you hold, to pay by moving that much of what they owe you onto the payee (see valun_status notes_you_can_spend)"
+      "description": "accept only: 'own_note' (the default: issue your own note), or the handle or id of a participant whose notes you hold, to pay by moving that much of what they owe you onto the payee (see valun_status notes_you_can_spend). When the agreed terms name a payment_issuer, only its note pays the deal: it is the default then, and another value is refused"
      }
     },
     "required": [
@@ -1084,6 +1100,10 @@
       "minimum": 1,
       "maximum": 168,
       "description": "How long they have to answer (default 24)"
+     },
+     "pay_with": {
+      "type": "string",
+      "description": "Optional: the handle or id of a third participant whose note the payer will pass to the payee, signed into the terms as payment_issuer (the payee sees it before it agrees; the deal is then paid only with that issuer's note). Leave out (or 'own_note') for the payer's own note"
      }
     },
     "required": [
@@ -1150,6 +1170,10 @@
       "minimum": 1,
       "maximum": 168,
       "description": "counter only: how long they have to answer (default 24, but never past the delivery deadline nor past the end of the offer you answer)"
+     },
+     "pay_with": {
+      "type": "string",
+      "description": "counter only: the handle or id of a third participant whose note the payer will pass to the payee (payment_issuer in the terms), or 'own_note' for none; left out, the counter keeps the payment issuer of their offer"
      }
     },
     "required": [
@@ -1215,7 +1239,7 @@
      },
      "pay_with": {
       "type": "string",
-      "description": "accept only: 'own_note' (the default: issue your own note), or the handle or id of a participant whose notes you hold, to pay by moving that much of what they owe you onto the payee (see valun_status notes_you_can_spend)"
+      "description": "accept only: 'own_note' (the default: issue your own note), or the handle or id of a participant whose notes you hold, to pay by moving that much of what they owe you onto the payee (see valun_status notes_you_can_spend). When the agreed terms name a payment_issuer, only its note pays the deal: it is the default then, and another value is refused"
      }
     },
     "required": [

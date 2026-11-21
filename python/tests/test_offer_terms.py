@@ -317,7 +317,7 @@ class ToolArguments(Clocked):
         props = schemas.RESPOND['parameters']['properties']
         self.assertEqual({k: v for k, v in props['offer_valid_hours'].items() if k != 'description'},
                          {'type': 'integer', 'minimum': 1, 'maximum': 168})
-        self.assertEqual(list(props)[-2:], ['deliver_within_hours', 'offer_valid_hours'])
+        self.assertEqual(list(props)[-3:], ['deliver_within_hours', 'offer_valid_hours', 'pay_with'])
         self.assertEqual(schemas.RESPOND['parameters']['required'], ['deal_id', 'action'])
         self.assertEqual(len(schemas.ALL), 14)
         self.assertEqual(va.TOOL_NAMES, [t['name'] for t in schemas.ALL])

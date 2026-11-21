@@ -2468,6 +2468,8 @@ class Client:
         proposer_key = self._registered_key(cur['by'])
         if proposer_key != (t['payer'] if t['payer']['id'] == cur['by'] else t['payee'])['pubkey']:
             raise ValunError('wrong_key', 'the proposer key in the terms is not the registered key')
+        if 'payment_issuer' in t:
+            self._check_payment_issuer(t)
         if not vb.verify(bytes.fromhex(cur['signature']), statement('propose', h).encode('utf-8'), bytes.fromhex(proposer_key)):
             raise ValunError('bad_signature', "the proposer's signature does not verify")
         if datetime.fromisoformat(t['offer_expires_at'].replace('Z', '+00:00')) < datetime.now(timezone.utc):
@@ -2475,15 +2477,30 @@ class Client:
         return {'terms_hash': h, 'proposer_signature_valid': True, 'terms': t}
 
     # ---------- acts (all signed locally) ----------
+    def _check_payment_issuer(self, t):
+        """Terms that name a payment issuer (payment_issuer {id, pubkey}; fix inbox #192/#196): a third participant, neither
+        party, under its current registered key (bad_terms, wrong_key otherwise)."""
+        x = t.get('payment_issuer')
+        if not (isinstance(x, dict) and sorted(x) == ['id', 'pubkey'] and isinstance(x['id'], str) and isinstance(x['pubkey'], str)):
+            raise ValunError('bad_terms', 'the terms name a payment_issuer that is not {id, pubkey}; refusing to sign')
+        if x['id'] in (t['payer']['id'], t['payee']['id']):
+            raise ValunError('bad_terms', 'the terms name a party of the deal as its payment_issuer; refusing to sign')
+        if self._registered_key(x['id']) != x['pubkey']:
+            raise ValunError('wrong_key', "the payment issuer's key in the terms is not its registered key")
+        return x
+
     def build_terms(self, counterparty_id, role, title, description, deliverable, price, deliver_by_hours=48,
-                    offer_ttl_hours=24, deal_id=None, version=1, prior=None, prior_expires_at=None):
+                    offer_ttl_hours=24, deal_id=None, version=1, prior=None, prior_expires_at=None, payment_issuer=None):
         """valun-deal/1 terms for a new proposal (or, with deal_id, version and prior, a counter-offer); signs nothing.
         The price is a whole number of this network's unit, at least 1 (bad_price; never truncated). Delivery is due
         deliver_by_hours from now; the offer stays open offer_ttl_hours, or, with offer_ttl_hours None,
         COUNTER_OFFER_HOURS but never past deliver_by nor past prior_expires_at (an ISO time: the end of the offer a
         counter-offer answers). Times are whole seconds, rounded down. Terms the server would refuse for their times are
         refused here first (bad_arguments, fix inbox #23): an offer open longer than the hours it gives to deliver
-        (check_offer_hours), or one that would already have expired when it is sent."""
+        (check_offer_hours), or one that would already have expired when it is sent. payment_issuer (a participant id;
+        fix inbox #192/#196): the terms name that participant, under its current registered key, as the issuer whose note
+        the payer will pass to the payee (payment_issuer {id, pubkey}); neither party may be it (bad_arguments). Without
+        it the terms are exactly as before."""
         if role not in ('payer', 'payee'):
             raise ValunError('bad_role', 'role must be payer (you pay with your credit) or payee (you do the work)')
         amount = _price_amount(price, self.unit)
@@ -2504,28 +2521,43 @@ class Client:
         if not datetime.fromisoformat(expires.replace('Z', '+00:00')) > now:
             raise ValunError('bad_arguments', (f'the offer would expire at {expires}, before it is sent: it must stay open '
                                                'for at least 1 h (offer_valid_hours); nothing was signed'))
-        return {'protocol': PROTOCOL, 'network': self.network, 'tracker_nft_id': info['tracker_nft_id'], 'denomination': info['denomination'],
-                'deal_id': deal_id or ('vd_' + secrets.token_hex(8)), 'version': version, 'prior_terms_hash': prior,
-                'nonce': secrets.token_hex(16), 'proposer': self.participant_id,
-                'payer': me if role == 'payer' else other, 'payee': other if role == 'payer' else me,
-                'service': {'title': title, 'description': description, 'deliverable': deliverable},
-                'price': {'amount': amount, 'unit': self.unit}, 'consideration': 'credit_note_on_delivery_accepted',
-                'deliver_by': _iso(deliver_by), 'offer_expires_at': expires}
+        t = {'protocol': PROTOCOL, 'network': self.network, 'tracker_nft_id': info['tracker_nft_id'], 'denomination': info['denomination'],
+             'deal_id': deal_id or ('vd_' + secrets.token_hex(8)), 'version': version, 'prior_terms_hash': prior,
+             'nonce': secrets.token_hex(16), 'proposer': self.participant_id,
+             'payer': me if role == 'payer' else other, 'payee': other if role == 'payer' else me,
+             'service': {'title': title, 'description': description, 'deliverable': deliverable},
+             'price': {'amount': amount, 'unit': self.unit}, 'consideration': 'credit_note_on_delivery_accepted',
+             'deliver_by': _iso(deliver_by), 'offer_expires_at': expires}
+        if payment_issuer is not None:
+            if not isinstance(payment_issuer, str) or not payment_issuer:
+                raise ValunError('bad_arguments', 'the payment issuer is a participant id; nothing was signed')
+            if payment_issuer in (self.participant_id, counterparty_id):
+                raise ValunError('bad_arguments', ('pay_with must name a third participant, whose note the payer passes on: '
+                                                   "not the payer (its own note is what an offer without pay_with says) and not "
+                                                   'the payee; nothing was signed'))
+            t['payment_issuer'] = {'id': payment_issuer, 'pubkey': self._registered_key(payment_issuer)}
+        return t
 
-    def propose(self, counterparty_id, role, title, description, deliverable, price, deliver_by_hours=48, offer_ttl_hours=24):
-        t = self.build_terms(counterparty_id, role, title, description, deliverable, price, deliver_by_hours, offer_ttl_hours)
+    def propose(self, counterparty_id, role, title, description, deliverable, price, deliver_by_hours=48, offer_ttl_hours=24,
+                pay_with=None):
+        """Sign and send a new offer. pay_with (a participant id; None or 'own_note': none) names the payment issuer in the
+        terms (build_terms payment_issuer)."""
+        t = self.build_terms(counterparty_id, role, title, description, deliverable, price, deliver_by_hours, offer_ttl_hours,
+                             payment_issuer=None if pay_with in (None, 'own_note') else pay_with)
         h = terms_hash(t)
         return self.request('POST', '/pilot/v1/deals', {'terms': t, 'terms_hash': h, 'signature': self._sign(statement('propose', h))})
 
     def counter(self, deal_id, price=None, title=None, description=None, deliverable=None, deliver_by_hours=None, offer_ttl_hours=None,
-                expected_terms_hash=None):
+                expected_terms_hash=None, pay_with=None):
         """Sign a counter-offer: the given changes, the rest copied from the current offer. With expected_terms_hash
         (the hash of the offer the owner or agent inspected), refuses (stale_terms) if the current offer is another.
         The new version follows the version inside the verified (hashed) terms, not the server's view of the deal.
         Delivery is due deliver_by_hours from now, by default by the current offer's deadline (rounded down to the hour,
         at least 1 h from now). The counter-offer stays open offer_ttl_hours; by default (fix inbox #23)
         COUNTER_OFFER_HOURS, but never past its own delivery deadline nor past the end of the offer it answers, so a
-        price-only counter to an offer due within a day is valid terms too."""
+        price-only counter to an offer due within a day is valid terms too. pay_with: None keeps the payment issuer of the
+        current offer (none when it names none), 'own_note' names none, and a participant id names that participant
+        (build_terms payment_issuer)."""
         d = self.deal(deal_id)
         chk = self.verify_offer(d)
         if expected_terms_hash and expected_terms_hash != chk['terms_hash']:
@@ -2534,10 +2566,12 @@ class Client:
         role = 'payer' if t0['payer']['id'] == self.participant_id else 'payee'
         other = t0['payee']['id'] if role == 'payer' else t0['payer']['id']
         due_h = deliver_by_hours if deliver_by_hours is not None else max(1, int((datetime.fromisoformat(t0['deliver_by'].replace('Z', '+00:00')) - datetime.now(timezone.utc)).total_seconds() // 3600))
+        issuer = (t0['payment_issuer']['id'] if isinstance(t0.get('payment_issuer'), dict) else None) if pay_with is None \
+            else None if pay_with == 'own_note' else pay_with
         t = self.build_terms(other, role, title or t0['service']['title'], description or t0['service']['description'],
                              deliverable or t0['service']['deliverable'], price if price is not None else t0['price']['amount'],
                              due_h, offer_ttl_hours, deal_id=deal_id, version=t0['version'] + 1, prior=chk['terms_hash'],
-                             prior_expires_at=t0['offer_expires_at'])
+                             prior_expires_at=t0['offer_expires_at'], payment_issuer=issuer)
         h = terms_hash(t)
         return self.request('POST', f'/pilot/v1/deals/{deal_id}/counter', {'terms': t, 'terms_hash': h, 'signature': self._sign(statement('propose', h))})
 
@@ -2605,6 +2639,12 @@ class Client:
         d = self.deal(deal_id)
         self.learn_owner_decisions(deal_id, d)
         terms, h, dh = self._accepted_delivery(d, deal_id, expected_deliverable_sha256, expected_terms_hash)
+        named = terms.get('payment_issuer')
+        if isinstance(named, dict):             # fix inbox #192/#196: these terms are paid only with that issuer's note
+            raise ValunError('terms_name_payment_issuer', (
+                f"the agreed terms name {named.get('id')} as the payment issuer: this deal is paid only by passing on that "
+                f"issuer's note (pay_with={named.get('id')}), not with a note of your own; nothing was signed"),
+                extra={'payment_issuer': {'id': named.get('id')}})
         # A pinned (0.4) profile reads /info: a server offering bound_notes/1 takes bound notes, and with any feature the
         # tracker keeps the timestamp residues 995-999 for other operations. Otherwise exactly as 0.3.
         features = self._features()
@@ -3006,6 +3046,12 @@ class Client:
         features = self._circulation()
         self._contract()
         issuer_id = self._resolve_issuer(deal_id, issuer)
+        named = terms.get('payment_issuer')
+        if isinstance(named, dict) and named.get('id') != issuer_id:      # fix inbox #192/#196
+            raise ValunError('payment_issuer_mismatch', (
+                f"the agreed terms name {named.get('id')} as the payment issuer: this deal is paid only with that issuer's "
+                f"note, not {issuer_id}'s (pay_with={named.get('id')}); nothing was signed"),
+                extra={'payment_issuer': {'id': named.get('id')}, 'issuer': issuer_id})
         issuer_pk = self._registered_key(issuer_id)
         mandate = _mandate_of(self.me())
         deal = nv.deal_context(terms, h, dh)

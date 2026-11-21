@@ -84,7 +84,10 @@ The checks, in this order (the first that fails gives the code; PROTOCOL.md 15.3
   -    stale_quote           payer roles: the quote digest is not the approved one (a regenerated transfer needs one)
   R8   policy_off, issuer_refused, policy_cap   the stricter of the local consent policy and the owner's mandate (the
                              payer roles need the mandate too); issuer lists are checked against the participant id the
-                             client itself resolved for the issuer's key (ctx issuer_ids), never an id the item names
+                             client itself resolved for the issuer's key (ctx issuer_ids), never an id the item names;
+                             payment_issuer_mismatch: a payee consent for a deal whose agreed terms name a payment
+                             issuer (ctx deal payment_issuer) through another issuer; for that issuer the issuer lists
+                             are not checked (the payee agreed to it with the terms; fix inbox #192/#196)
   R12  pending_unbound_note  a novation on an edge where this client holds an ordinary credit note that can still
                              apply (pending, and later than the edge's state shown)
        payment_attempt       a novation, or a bound note, that brings an edge of mine (as issuer) to the acknowledged
@@ -224,6 +227,8 @@ REFUSAL_CODES = (
     'payment_attempt',
     # this module: a quote other than the approved one; an item that is not well formed
     'stale_quote', 'bad_template', 'bad_consent',
+    # fix inbox #192/#196: a payee consent through another issuer than the one the agreed terms name (payment_issuer)
+    'payment_issuer_mismatch',
     # tracker v3.2: the server does not report the contract this client signs prior acknowledgments for
     'feature_unavailable',
 )
@@ -481,13 +486,18 @@ def pay_statement(deal_id, quote_digest_hex):
 def deal_context(terms, terms_hash, deliverable_sha256=None, delivered=False, transfer_id=None):
     """ctx['deal'] from terms the caller has verified (client.verified_agreement): their hash, the sha256 of the delivery
     it checked (payer roles), and for the payee whether it delivered on the deal and the transfer the deal view says pays
-    it (deal.payment.transfer_id)."""
-    return {'deal_id': terms['deal_id'], 'network': terms['network'], 'tracker_nft_id': terms['tracker_nft_id'],
-            'denomination': terms['denomination'], 'terms_hash': terms_hash, 'deliverable_sha256': deliverable_sha256,
-            'price': terms['price']['amount'],
-            'payer': {'id': terms['payer']['id'], 'pubkey': terms['payer']['pubkey']},
-            'payee': {'id': terms['payee']['id'], 'pubkey': terms['payee']['pubkey']},
-            'delivered': delivered is True, 'transfer_id': transfer_id}
+    it (deal.payment.transfer_id). Terms that name a payment issuer (fix inbox #192/#196) add payment_issuer {id,
+    pubkey}; others are as before."""
+    out = {'deal_id': terms['deal_id'], 'network': terms['network'], 'tracker_nft_id': terms['tracker_nft_id'],
+           'denomination': terms['denomination'], 'terms_hash': terms_hash, 'deliverable_sha256': deliverable_sha256,
+           'price': terms['price']['amount'],
+           'payer': {'id': terms['payer']['id'], 'pubkey': terms['payer']['pubkey']},
+           'payee': {'id': terms['payee']['id'], 'pubkey': terms['payee']['pubkey']},
+           'delivered': delivered is True, 'transfer_id': transfer_id}
+    pi = terms.get('payment_issuer')
+    if isinstance(pi, dict):
+        out['payment_issuer'] = {'id': pi.get('id'), 'pubkey': pi.get('pubkey')}
+    return out
 
 
 # ---------- D-1: payment attempts ----------
@@ -936,6 +946,17 @@ class _Run:
         cap = p.get('max_PC')
         if cap is not None and (not _nat(cap) or amount > cap):
             self.refuse('policy_cap', f'{amount} {self.unit} is above the cap your local consent policy sets for one consent')
+
+    def named_issuer(self, named, issuer_pk):
+        """Fix inbox #192/#196: a payee consent for a deal whose agreed terms name a payment issuer (ctx deal
+        payment_issuer {id, pubkey}) is signed only for that issuer: its key as the terms name it, or the key this client
+        itself resolved to its participant id (ctx issuer_ids, after a key change); payment_issuer_mismatch otherwise.
+        For that issuer the issuer lists of R8 are not checked: the payee agreed to it when it accepted the terms."""
+        ids = self.ctx.get('issuer_ids')
+        resolved = ids.get(issuer_pk) if isinstance(ids, dict) else None
+        if not (isinstance(named, dict) and (issuer_pk == named.get('pubkey') or (_text(resolved) and resolved == named.get('id')))):
+            self.refuse('payment_issuer_mismatch', "the agreed terms name another issuer than this transfer's: the deal is "
+                                                   'paid only with the note of the issuer its terms name')
 
     def issuer_accepted(self, p, m, issuer_pk, item_issuer_id):
         """R8's issuer lists, local (participant ids or public keys) and the mandate's (participant ids), checked against
@@ -1425,7 +1446,10 @@ def _payee(run, item, edges, context):
     p, m = run.policy('as_new_creditor', 'accept_transfers')
     if m.get('may_accept_credit') is False:
         run.refuse('policy_off', "your owner's mandate does not allow accepting credit")
-    run.issuer_accepted(p, m, e['I'], e['issuer_id'] or _id_of(context.get('issuer')))
+    if 'payment_issuer' in deal:                # fix inbox #192/#196: the issuer the payee agreed to, and only it
+        run.named_issuer(deal['payment_issuer'], e['I'])
+    else:
+        run.issuer_accepted(p, m, e['I'], e['issuer_id'] or _id_of(context.get('issuer')))
     run.cap(p, a)
     cap = m.get('max_accept_per_issuer')
     if cap is not None and (not _nat(cap) or Y + a > cap):

@@ -224,6 +224,12 @@ def issuer_ctx(**over):
     return c
 
 
+def named_ctx(issuer_id=A_ID, issuer_pk=None, **over):
+    # fix inbox #192/#196: the agreed terms name a payment issuer (deal payment_issuer {id, pubkey})
+    t = dict(terms(), payment_issuer={'id': issuer_id, 'pubkey': issuer_pk or A.pk})
+    return payee_ctx(deal=nv.deal_context(t, TH, DH, delivered=True, transfer_id=TID), **over)
+
+
 def payee_ctx(**over):
     # issuer_ids: the participant id the payee's client resolved itself for the issuer's key (the directory)
     c = base_ctx(C, C_ID, consent_policy=dict(POLICY), mandate=dict(MANDATE),
@@ -605,6 +611,20 @@ CASES = [
      'issuer_refused'),
     ('payee: sign, the mandate refuses only another id and my client resolved the issuer', CO, payee_item,
      lambda: payee_ctx(mandate=dict(MANDATE, accept_notes_from='any', refuse_notes_from=[E_ID])), None),
+    # fix inbox #192/#196: terms that name a payment issuer: only its note, and the standing lists do not refuse it
+    ('payee: sign, the terms name the issuer A, which the mandate and my policy refuse', CO, payee_item,
+     lambda: named_ctx(mandate=dict(MANDATE, accept_notes_from=[E_ID], refuse_notes_from=[A_ID]),
+                       consent_policy=dict(POLICY, refuse_issuers=[A.pk], accept_issuers=[E_ID])), None),
+    ('payee: sign, the terms name A under a key A no longer holds and my client resolved the new one to A', CO, payee_item,
+     lambda: named_ctx(issuer_pk=E.pk), None),
+    ('payee: the terms name another issuer (E) than the transfer\'s (A)', CO, payee_item,
+     lambda: named_ctx(issuer_id=E_ID, issuer_pk=E.pk), 'payment_issuer_mismatch'),
+    ('payee: the terms name E, and the directory does not resolve A\'s key', CO, payee_item,
+     lambda: named_ctx(issuer_id=E_ID, issuer_pk=E.pk, issuer_ids={}), 'payment_issuer_mismatch'),
+    ('payee: the terms name A; the cap still applies', CO, payee_item,
+     lambda: named_ctx(mandate=dict(MANDATE, max_accept_per_issuer=6)), 'policy_cap'),
+    ('payee: the terms name A; the mandate still must accept transfers', CO, payee_item,
+     lambda: named_ctx(mandate=dict(MANDATE, accept_transfers=False)), 'policy_off'),
 
     # --- evaluate_consent, payer (a regenerated transfer) ---
     ('payer consent: sign (the same operation as the earlier attempt: same prior, same T)', CO, payer_item, regen_ctx, None),
