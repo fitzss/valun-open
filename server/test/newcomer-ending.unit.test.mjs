@@ -312,7 +312,7 @@ test('findings 1 and 13: skill.md opens with a quickstart whose first command is
   assert.ok(first > 0 && first <= 40, `the first runnable command is on line ${first}`);
   assert.ok(SKILL.indexOf('## Quickstart') < SKILL.indexOf('## 0. Ask your human first'));
   const q = blockAfter('## Quickstart'), ledger = q.indexOf(LEDGER);
-  assert.match(q[0], /^uvx --from valun==0\.7\.3 valun join --sandbox --handle YOUR-HANDLE --operator "YOUR HUMAN" .* --owner-token-file "\$HOME\/valun-owner-token-YOUR-HANDLE\.txt" --approvals console$/);
+  assert.match(q[0], /^uvx --from valun==0.7.4 valun join --sandbox --handle YOUR-HANDLE --operator "YOUR HUMAN" .* --owner-token-file "\$HOME\/valun-owner-token-YOUR-HANDLE\.txt" --approvals console$/);
   const calls = q.slice(1, ledger).map(toolOf);
   assert.deepEqual(calls.map(c => c[0]), ['valun_status', 'valun_inbox', 'valun_propose', 'valun_respond', 'valun_deliver', 'valun_review_delivery']);
   assert.deepEqual(calls[2][1], {counterparty: 'sandbox-exact', role: 'payer', title: 'text-stats', description: 'The text-stats of the text below.\nTEXT: Hello Valun, hello world.',
@@ -335,8 +335,8 @@ test('finding 8: section 2\'s "Try both sides": two profiles, each with its own 
   const section = SKILL.slice(SKILL.indexOf('## 2. See it work'), SKILL.indexOf('## 3. Find agents'));
   assert.ok(section.includes('**Try both sides.**'));
   const r = blockAfter('**Try both sides.**'), ledger = r.indexOf(LEDGER);
-  assert.match(r[0], /^uvx --from valun==0\.7\.3 valun --profile buyer join --sandbox --handle BUYER-HANDLE .*--owner-token-file "\$HOME\/valun-owner-token-BUYER-HANDLE\.txt" --approvals none$/);
-  assert.match(r[1], /^uvx --from valun==0\.7\.3 valun --profile seller join --sandbox --handle SELLER-HANDLE .*--owner-token-file "\$HOME\/valun-owner-token-SELLER-HANDLE\.txt" --approvals none$/);
+  assert.match(r[0], /^uvx --from valun==0.7.4 valun --profile buyer join --sandbox --handle BUYER-HANDLE .*--owner-token-file "\$HOME\/valun-owner-token-BUYER-HANDLE\.txt" --approvals none$/);
+  assert.match(r[1], /^uvx --from valun==0.7.4 valun --profile seller join --sandbox --handle SELLER-HANDLE .*--owner-token-file "\$HOME\/valun-owner-token-SELLER-HANDLE\.txt" --approvals none$/);
   const steps = r.slice(2, ledger).map(l => [/--profile (\S+)/.exec(l)[1], ...toolOf(l)]);
   assert.deepEqual(steps.map(s => `${s[0]} ${s[1]}`), ['buyer valun_propose', 'seller valun_inbox', 'seller valun_respond', 'seller valun_deliver', 'buyer valun_deal', 'buyer valun_review_delivery']);
   assert.deepEqual([steps[0][2].counterparty, steps[0][2].role, steps[0][2].price], ['SELLER-HANDLE', 'payer', 2_000_000]);
@@ -422,5 +422,5 @@ test('findings 3 and 5, the docs: one default per mode, console needs someone ap
   assert.ok(s.includes('With `console` the agent signs, but its offers, acceptances and notes then wait until your human approves them at https://valun.tech/pilot#owner, so it needs your human approving there; with `none` nothing waits.'));
   assert.ok(s.includes('This needs the join\'s `--approvals none`, or `console` with your human approving (see Approvals above).'));
   assert.ok(s.includes('Your record says `self_serve: true` (and `sandbox_only: true`, its older name): you joined without an invite and have these limits. On valun.tech it does not limit whom you deal with (`open_network: true`).'));
-  assert.ok(pub('llms-testnet.txt').includes('the first tester\'s default, where your agent\'s offers, acceptances and notes wait until you approve them in the owner console (a --sandbox join of valun 0.7.3 without --approvals asks whether a person will approve, and sends nothing with no terminal; ask signs nothing from a shell with nobody at the terminal)'));
+  assert.ok(pub('llms-testnet.txt').includes('the first tester\'s default, where your agent\'s offers, acceptances and notes wait until you approve them in the owner console (a --sandbox join of valun 0.7.4 without --approvals asks whether a person will approve, and sends nothing with no terminal; ask signs nothing from a shell with nobody at the terminal)'));
 });

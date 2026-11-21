@@ -156,18 +156,23 @@ export function issuerNetDebt(pilot, X, ledger, {excludeDealId = null, excludeGu
 // A rule adds an entry to `checks` only when it is set (a value other than its default), so the mandate_check of an owner
 // who sets none of them is as before. Returns {ok: true, checks} or {ok: false, rule, detail, source, checks}; `source`
 // is who set the value that refused (owner_mandate or agent_limits, Pilot.limitSource).
-export async function creditCheck(pilot, C, X, amount, {via, ledger = null, excludeDealId = null, excludeTransferId = null, excludeGuaranteeId = null} = {}) {
+// `signedIssuer` (transfers only): X is the issuer the deal's signed terms name (payment_issuer), which C agreed to when
+// it accepted them (its owner's policy was checked then: Pilot.paymentIssuerCheck), so the standing lists (a) and (b) do
+// not refuse it; the entry {rule: 'payment_issuer', named_in_terms: true} says so. The other rules run as always.
+export async function creditCheck(pilot, C, X, amount, {via, ledger = null, excludeDealId = null, excludeTransferId = null, excludeGuaranteeId = null, signedIssuer = false} = {}) {
   if (via !== 'agreement' && via !== 'transfer') throw new TypeError(`policy: via must be 'agreement' or 'transfer', not ${JSON.stringify(via)}`);
   const m = pilot.effectiveLimits(C), v = k => policyValue(C, m, k), checks = [];
   const fail = (rule, detail) => ({ok: false, rule, detail, source: pilot.limitSource(C, rule, {issuer: X.id}), checks});
+  const lists = !(signedIssuer && via === 'transfer');
+  if (!lists) checks.push({rule: 'payment_issuer', named_in_terms: true});
   // (a)
   const refused = v('refuse_notes_from');
-  if (Array.isArray(refused) && refused.length) {
+  if (lists && Array.isArray(refused) && refused.length) {
     if (refused.includes(X.id)) return fail('refuse_notes_from', `${X.handle} is on refuse_notes_from: this agent takes no claim on it`);
     checks.push({rule: 'refuse_notes_from', issuer_listed: false});
   }
   // (b)
-  if (via === 'transfer') {
+  if (lists && via === 'transfer') {
     const accepted = v('accept_notes_from');
     if (!(accepted === 'any' || (Array.isArray(accepted) && accepted.includes(X.id)))) return fail('accept_notes_from', `${X.handle} is not on accept_notes_from`);
     checks.push({rule: 'accept_notes_from', issuer_listed: accepted !== 'any', any: accepted === 'any'});

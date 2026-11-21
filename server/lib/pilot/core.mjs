@@ -1649,7 +1649,9 @@ export class Pilot {
   // check (the budget card's check) counts from the same notes; otherwise they are read here.
   // `views` (a read that answers for a later step, the budget card's check): the participants as that step finds them,
   // for issueExposure; p itself is then passed as the step finds it (renewedView). Actions never pass it.
-  async checkMandate(p, role, counterpartyId, price, {excludeDealId = null, excludeGuaranteeId = null, guarantee = false, also = [], debtFrom = null, dealId = null, ledger: given = null, views = null} = {}) {
+  // `paymentIssuer`: the id of the participant the deal's terms name as payment_issuer (null: none); its owner policy is
+  // checked last (paymentIssuerCheck: 403 payment_issuer_not_accepted).
+  async checkMandate(p, role, counterpartyId, price, {excludeDealId = null, excludeGuaranteeId = null, guarantee = false, also = [], debtFrom = null, dealId = null, ledger: given = null, views = null, paymentIssuer = null} = {}) {
     const m = this.effectiveLimits(p);                // owner mandate, tightened by any limits the agent recorded
     const fail = (rule, detail, from = null) => {
       // `source` keeps naming the limit set that applied (agent_limits | owner_mandate); `recorded_by` says who recorded an
@@ -1735,7 +1737,36 @@ export class Pilot {
         checks.push(...r.checks);
       }
     }
+    if (paymentIssuer) checks.push(this.paymentIssuerCheck(p, role, this.participant(paymentIssuer)));
     return {needsOwner: !(guarantee && role === 'payee') && price > p.mandate.approve_above, checks, mandate_version: p.mandate_version};
+  }
+
+  // Terms that name a payment issuer A (payment_issuer; fix inbox #192/#196) bind both parties to a payment by transfer of
+  // A's note, so each owner's policy bounds whether its agent may agree to them (checkMandate, at a proposal, a counter,
+  // an acceptance and an owner's approval of one). The payee C: it takes payments by transfer (accept_transfers), A is not
+  // on refuse_notes_from and is on accept_notes_from ('any' included), A is within its counterparties (and, for a
+  // self-serve sandbox participant, a sandbox agent), and A is not one the operator runs when accept_operator_issuers is
+  // off. The payer B: its owner lets it pay with notes it holds (pay_with_held_notes is not never). Once agreed, C's
+  // standing lists no longer refuse a payment with A's note (receivingTransferCheck); every other rule still applies.
+  // Throws 403 payment_issuer_not_accepted {rule, source, issuer}; returns the check's entry.
+  paymentIssuerCheck(p, role, A) {
+    const m = this.effectiveLimits(p), v = k => policyValue(p, m, k);
+    const no = (rule, why) => { throw new PilotError('payment_issuer_not_accepted', `these terms name ${A.handle} (${A.id}) as the payment issuer, and ${p.handle}'s owner policy does not allow agreeing to them: ${why} (${rule}); nothing was agreed`, 403,
+      {rule, source: this.limitSource(p, rule, {issuer: A.id}), issuer: A.id, mandate_version: p.mandate_version}); };
+    if (role === 'payer') {
+      const pay = m.pay_with_held_notes;
+      if (!pay || pay === 'never') no('pay_with_held_notes', `${p.handle} may not pay with notes it holds`);
+      return {rule: 'payment_issuer', issuer: A.id, pay_with_held_notes: pay};
+    }
+    if (!m.accept_transfers) no('accept_transfers', `${p.handle} does not take payments by transfer`);
+    const refused = v('refuse_notes_from');
+    if (Array.isArray(refused) && refused.includes(A.id)) no('refuse_notes_from', `${A.handle} is on refuse_notes_from`);
+    const accepted = v('accept_notes_from');
+    if (!(accepted === 'any' || (Array.isArray(accepted) && accepted.includes(A.id)))) no('accept_notes_from', `${A.handle} is not on accept_notes_from`);
+    if (m.counterparties !== 'any' && !(Array.isArray(m.counterparties) && m.counterparties.includes(A.id))) no('counterparties', `${A.handle} is not on the counterparty list`);
+    if (this.boxedOut(p, A.id)) no('accept_notes_from', `a self-serve sandbox participant takes notes of the sandbox agents only, not ${A.handle}'s`);
+    if (v('accept_operator_issuers') === false && this.serverRun(A)) no('accept_operator_issuers', `${A.handle} is run by the Valun operator, which holds its keys`);
+    return {rule: 'payment_issuer', issuer: A.id, accepted: true};
   }
 
   // ---------- deals ----------
@@ -1812,7 +1843,7 @@ export class Pilot {
     const bad = m => { throw new PilotError('invalid_terms', m); };
     if (!t || typeof t !== 'object') bad('terms must be an object');
     const keys = ['protocol', 'network', 'tracker_nft_id', 'denomination', 'deal_id', 'version', 'prior_terms_hash', 'nonce', 'proposer', 'payer', 'payee',
-      'service', 'price', 'consideration', 'deliver_by', 'offer_expires_at'];
+      'service', 'price', 'consideration', 'deliver_by', 'offer_expires_at', 'payment_issuer'];
     for (const k of Object.keys(t)) if (!keys.includes(k)) bad(`unknown terms field ${k}`);
     if (t.protocol !== PROTOCOL) bad(`protocol must be ${PROTOCOL}`);
     if (t.network !== NETWORK) bad(`network must be ${NETWORK}`);
@@ -1830,6 +1861,18 @@ export class Pilot {
     }
     if (t.payer.id === t.payee.id) bad('payer and payee must differ');
     if (proposer.id !== t.payer.id && proposer.id !== t.payee.id) bad('the proposer must be the payer or the payee');
+    // payment_issuer (optional; fix inbox #192/#196): the participant whose note the payer will pass to the payee by
+    // transfer, signed into the terms, so the payee agrees to it before it works. Terms without it are as before (the
+    // same fields, the same hash): the payer pays with its own note, or with any note it holds that the payee takes.
+    if (Object.hasOwn(t, 'payment_issuer')) {
+      if (!this.circulating) bad('payment_issuer needs circulating credit (payment by transfer), which this server does not run; leave it out');
+      const x = t.payment_issuer;
+      if (!x || typeof x !== 'object' || Array.isArray(x) || Object.keys(x).sort().join() !== 'id,pubkey') bad('payment_issuer must be {id, pubkey}');
+      const q = typeof x.id === 'string' && PID_RE.test(x.id) && Object.hasOwn(this.s.participants, x.id) ? this.s.participants[x.id] : null;
+      if (!q || q.status !== 'active' || q.pubkey !== x.pubkey) bad('payment_issuer must be an active participant with its registered key');
+      if (x.id === t.payer.id) bad("payment_issuer must not be the payer: paying with the payer's own note is what terms without payment_issuer say");
+      if (x.id === t.payee.id) bad('payment_issuer must not be the payee: a note the payee issued itself cannot pay it');
+    }
     const sv = t.service;
     if (!sv || typeof sv !== 'object' || Object.keys(sv).sort().join() !== 'deliverable,description,title') bad('service must be {title, description, deliverable}');
     signedText(sv.title, 120, 'service.title'); signedText(sv.description, 2000, 'service.description'); signedText(sv.deliverable, 500, 'service.deliverable');
@@ -1892,8 +1935,9 @@ export class Pilot {
 
   // Terms name each party's key. Before terms become an agreement (or an open offer), both parties must still be active
   // with exactly those keys: a revoked or replaced key can no longer commit its participant.
+  // A payment issuer the terms name (payment_issuer) must still hold the key they name, too.
   partiesCurrent(v) {
-    for (const r of ['payer', 'payee']) {
+    for (const r of ['payer', 'payee', ...(v.terms.payment_issuer ? ['payment_issuer'] : [])]) {
       const q = this.s.participants[v.terms[r].id];
       if (!q || q.status !== 'active' || q.pubkey !== v.terms[r].pubkey)
         throw new PilotError('key_changed', `${q?.handle ?? v.terms[r].id}'s registered agent key is no longer the one these terms name (its owner revoked or replaced it); these terms can no longer be agreed`, 409, {party: v.terms[r].id});
@@ -1904,7 +1948,7 @@ export class Pilot {
   // Returns the proposer's mandate check as it is now (its needsOwner is used below).
   async proposerStillAuthorized(d, v) {
     const q = this.s.participants[v.by], role = d.payer === v.by ? 'payer' : 'payee';
-    try { return await this.checkMandate(q, role, role === 'payer' ? d.payee : d.payer, v.terms.price.amount, {excludeDealId: d.id}); }
+    try { return await this.checkMandate(q, role, role === 'payer' ? d.payee : d.payer, v.terms.price.amount, {excludeDealId: d.id, paymentIssuer: v.terms.payment_issuer?.id ?? null}); }
     catch (e) {
       if (e.code !== 'mandate_exceeded') throw e;
       this.store.audit({type: 'deal.accept_refused_proposer_mandate', deal: d.id, proposer: q.id, rule: e.extra.rule});
@@ -1916,7 +1960,7 @@ export class Pilot {
   // owner may have tightened them since); the reason stays private to the acceptor's side.
   async acceptorStillAuthorized(d, v) {
     const q = this.s.participants[d.acceptance.by], role = d.payer === q.id ? 'payer' : 'payee';
-    try { await this.checkMandate(q, role, role === 'payer' ? d.payee : d.payer, v.terms.price.amount, {excludeDealId: d.id}); }
+    try { await this.checkMandate(q, role, role === 'payer' ? d.payee : d.payer, v.terms.price.amount, {excludeDealId: d.id, paymentIssuer: v.terms.payment_issuer?.id ?? null}); }
     catch (e) {
       if (e.code !== 'mandate_exceeded') throw e;
       this.store.audit({type: 'deal.confirm_refused_acceptor_mandate', deal: d.id, acceptor: q.id, rule: e.extra.rule});
@@ -1985,7 +2029,7 @@ export class Pilot {
       const role = t.payer.id === p.id ? 'payer' : 'payee', other = role === 'payer' ? t.payee.id : t.payer.id;
       if (this.atOpenOfferLimit(p)) throw new PilotError('too_many_open_offers',
         `a self-serve participant has at most ${OPEN_NETWORK_MAX_OPEN_OFFERS} offers of its own open at once; withdraw one or wait for answers`, 429);
-      const chk = await this.checkMandate(p, role, other, t.price.amount, {debtFrom: Date.parse(t.deliver_by), dealId: t.deal_id});
+      const chk = await this.checkMandate(p, role, other, t.price.amount, {debtFrom: Date.parse(t.deliver_by), dealId: t.deal_id, paymentIssuer: t.payment_issuer?.id ?? null});
       const v = {v: 1, by: p.id, terms: t, terms_hash: h, signature, created_at: iso(this.now()), state: chk.needsOwner ? 'awaiting_owner' : 'open', mandate_check: chk,
         offered_at: chk.needsOwner ? null : iso(this.now())};
       const d = {id: t.deal_id, payer: t.payer.id, payee: t.payee.id, created_at: iso(this.now()), status: chk.needsOwner ? 'proposed_awaiting_owner' : 'open', versions: [v], history: []};
@@ -2010,7 +2054,7 @@ export class Pilot {
       if (claimed && claimed !== h) throw new PilotError('hash_mismatch', `the server computes terms_hash ${h}; the client sent ${claimed}`, 400, {canonical: canonical(t)});
       await this.verifySig(p, statements.propose(h), signature, 'counter-offer');
       const role = d.payer === p.id ? 'payer' : 'payee';
-      const chk = await this.checkMandate(p, role, role === 'payer' ? d.payee : d.payer, t.price.amount, {debtFrom: Date.parse(t.deliver_by), dealId: d.id});
+      const chk = await this.checkMandate(p, role, role === 'payer' ? d.payee : d.payer, t.price.amount, {debtFrom: Date.parse(t.deliver_by), dealId: d.id, paymentIssuer: t.payment_issuer?.id ?? null});
       const v = {v: t.version, by: p.id, terms: t, terms_hash: h, signature, created_at: iso(this.now()), state: chk.needsOwner ? 'awaiting_owner' : 'open', mandate_check: chk,
         offered_at: chk.needsOwner ? null : iso(this.now())};
       if (chk.needsOwner) { v.approval_id = this.approval(p, d, 'propose', v).id; d.pending_counter = v; }
@@ -2032,7 +2076,7 @@ export class Pilot {
       this.partiesCurrent(cur);
       await this.verifySig(p, statements.accept(cur.terms_hash), signature, 'acceptance');
       const role = d.payer === p.id ? 'payer' : 'payee';
-      const chk = await this.checkMandate(p, role, role === 'payer' ? d.payee : d.payer, cur.terms.price.amount, {debtFrom: Date.parse(cur.terms.deliver_by), dealId: d.id});
+      const chk = await this.checkMandate(p, role, role === 'payer' ? d.payee : d.payer, cur.terms.price.amount, {debtFrom: Date.parse(cur.terms.deliver_by), dealId: d.id, paymentIssuer: cur.terms.payment_issuer?.id ?? null});
       const pchk = await this.proposerStillAuthorized(d, cur);
       d.acceptance = {version: cur.v, by: p.id, terms_hash: cur.terms_hash, signature, at: iso(this.now()), mandate_check: chk, state: 'awaiting_owner'};
       this.event(d, p.id, 'accepted', {version: cur.v, terms_hash: cur.terms_hash, awaiting_owner: chk.needsOwner});
@@ -2206,7 +2250,7 @@ export class Pilot {
       if (decision === 'approve') {
         if (Date.parse(v.terms.offer_expires_at) < this.now()) throw new PilotError('expired', 'the offer expired before this decision', 409);
         this.partiesCurrent(v);
-        await this.checkMandate(p, role, other, v.terms.price.amount, {excludeDealId: d.id});
+        await this.checkMandate(p, role, other, v.terms.price.amount, {excludeDealId: d.id, paymentIssuer: v.terms.payment_issuer?.id ?? null});
         if (a.kind === 'accept') pchk = await this.proposerStillAuthorized(d, v);
         if (a.kind === 'confirm_offer') await this.acceptorStillAuthorized(d, v);
         // The lock serialises writes only: while the checks above awaited the tracker, a read that sweeps (a deal view,
@@ -2325,6 +2369,7 @@ export class Pilot {
     const d = this.partyDeal(id, p);
     if (d.payer !== p.id) throw new PilotError('not_payer', 'only the payer signs the note', 403);
     if (!PAYABLE.includes(d.status)) throw new PilotError('wrong_state', `deal is ${d.status}; a note follows a delivery`, 409);
+    if (this.namedIssuer(d)) throw this.ownNoteRefused(d);          // terms that name a payment issuer: no note of its own
     if (bound && this.mode === 'off') throw new PilotError('feature_unavailable', 'bound notes are not enabled on this server (circulating credit is off); fetch the template without bound=1', 409);
     const t = d.agreement.terms, {issuer, recipient} = this.noteParties(d);
     this.assertPairFree(d, issuer, recipient);
@@ -2388,6 +2433,7 @@ export class Pilot {
       const d = this.partyDeal(id, p);
       if (d.payer !== p.id) throw new PilotError('not_payer', 'only the payer accepts the delivery', 403);
       if (!PAYABLE.includes(d.status)) throw new PilotError('wrong_state', `deal is ${d.status}; nothing to complete`, 409);
+      if (this.namedIssuer(d)) throw this.ownNoteRefused(d);
       if (terms_hash !== d.agreement.terms_hash || deliverable_sha256 !== d.delivery.sha256) throw new PilotError('stale_terms', 'hashes do not match the agreement and delivery', 409);
       await this.verifySig(p, statements.complete(terms_hash, deliverable_sha256), signature, 'completion');
       const t = d.agreement.terms, {issuer, recipient} = this.noteParties(d);
@@ -2472,8 +2518,12 @@ export class Pilot {
   // prior_timestamp). The D-1 windows then apply to it as to every other attempt (paymentBlock). A payer the server
   // runs (the sandbox agents) is left out: the server signs for it only what it records. While the signature checker is
   // unavailable (503 signer_unavailable) the note is recorded unverified (attemptSignaturesCheck). Never throws.
+  // Not recorded: a note refused as terms_name_payment_issuer (the terms name a payment issuer, so the deal is never paid
+  // with the payer's own note: recording it would hold the payment the terms ask for behind it; our clients never sign one,
+  // as the template is refused first).
   async recordRefusedNote(p, id, note, err) {
     if (!this.circulating || this.serverRun(p) || !(err instanceof PilotError || err instanceof BasisError)) return;
+    if (err.code === 'terms_name_payment_issuer') return;
     try {
       const d = typeof id === 'string' && Object.hasOwn(this.s.deals, id) ? this.s.deals[id] : null;
       if (!d || d.payer !== p.id || !d.agreement || !d.delivery || statusClass(d.status)?.terminal) return;
@@ -2530,9 +2580,12 @@ export class Pilot {
   // unavailable: attemptSignaturesCheck): its prior slot over PA(A,B,X,p_AB,T) with the posted from_prior_timestamp, else
   // (not asserted) the timestamp of A->B's note as it is now; the record keeps that prior state of its from-edge (for
   // the same-prior exemption, samePriorState) and the posted to_prior_timestamp (null when none was posted). Never
-  // throws.
+  // throws. Not recorded: a transfer refused as payment_issuer_mismatch (another issuer than the terms name: the server
+  // never asks that issuer or the payee to sign it, so it can never apply, and recording it would hold the payment the
+  // terms ask for behind it).
   async recordRefusedTransfer(p, id, b, err) {
     if (!this.circulating || this.serverRun(p) || !(err instanceof PilotError || err instanceof BasisError)) return;
+    if (err.code === 'payment_issuer_mismatch') return;
     try {
       const d = typeof id === 'string' && Object.hasOwn(this.s.deals, id) ? this.s.deals[id] : null;
       if (!d || d.payer !== p.id || !d.agreement || !d.delivery || statusClass(d.status)?.terminal || !p.pubkey) return;
@@ -2923,7 +2976,10 @@ export class Pilot {
     if (this.boxedOut(C, A.id)) no('accept_notes_from');
     if (m.expires_at && Date.parse(m.expires_at) < this.now()) no('expires_at');
     ledger ??= await this.ledger();
-    const r = await creditCheck(this, C, A, a, {via: 'transfer', ledger, excludeDealId: dealId, excludeTransferId: exceptTransfer});
+    // The issuer the deal's signed terms name (payment_issuer): C agreed to it, so its standing lists (refuse_notes_from,
+    // accept_notes_from) do not refuse it now; every other rule applies (fix inbox #196).
+    const signedIssuer = !!dealId && this.s.deals[dealId]?.agreement?.terms?.payment_issuer?.id === A.id;
+    const r = await creditCheck(this, C, A, a, {via: 'transfer', ledger, excludeDealId: dealId, excludeTransferId: exceptTransfer, signedIssuer});
     if (!r.ok) no(r.rule);
     // Coverage is judged on the issuer of the note received, without adding a (A's total does not change).
     if (m.min_payer_coverage_pct > 0) {
@@ -3209,8 +3265,26 @@ export class Pilot {
     return new PilotError('edge_busy', 'a payment of this deal is in progress', 409, {retry_after_ms: b.retry_after_ms ?? PAIR_BUSY_RETRY_MS});
   }
 
+  // ---------- a payment issuer named in the terms (fix inbox #192/#196) ----------
+  // The participant the agreed terms of deal d name as payment_issuer, or null (terms without it: as before).
+  namedIssuer(d) {
+    const x = d.agreement?.terms?.payment_issuer;
+    return x ? this.s.participants[x.id] ?? {id: x.id, handle: x.id} : null;
+  }
+  // Paying deal d with the payer's own note while its terms name a payment issuer A: 409 terms_name_payment_issuer.
+  ownNoteRefused(d) {
+    const A = this.namedIssuer(d);
+    return new PilotError('terms_name_payment_issuer', `the agreed terms name ${A.handle} (${A.id}) as the payment issuer: this deal is paid only by passing on ${A.handle}'s note to the payee (pay by transfer with issuer ${A.id}; valun_review_delivery pay_with=${A.handle}), not with a note of your own; nothing was signed or recorded`, 409, {payment_issuer: {id: A.id, handle: A.handle}});
+  }
+  // Paying deal d with issuer X's note while its terms name another payment issuer A: 409 payment_issuer_mismatch.
+  issuerRefused(d, X) {
+    const A = this.namedIssuer(d);
+    return new PilotError('payment_issuer_mismatch', `the agreed terms name ${A.handle} (${A.id}) as the payment issuer: this deal is paid only with ${A.handle}'s note, not ${X.handle}'s (pay_with=${A.handle}); nothing was signed or recorded`, 409, {payment_issuer: {id: A.id, handle: A.handle}, issuer: X.id});
+  }
+
   // ---------- building a transfer ----------
-  // The parties of a payment of deal d by A's note (issuerId), and the checks that need no tracker read.
+  // The parties of a payment of deal d by A's note (issuerId), and the checks that need no tracker read. Terms that name a
+  // payment issuer take only its note (409 payment_issuer_mismatch).
   transferParties(p, d, issuerId) {
     if (d.payer !== p.id) throw new PilotError('not_payer', 'only the payer pays', 403);
     if (!PAYABLE.includes(d.status)) throw new PilotError('wrong_state', `deal is ${d.status}; a payment follows a delivery`, 409);
@@ -3220,6 +3294,7 @@ export class Pilot {
     const B = p, C = this.s.participants[d.payee], a = d.agreement.terms.price.amount;
     if (A.id === B.id) throw new PilotError('self_edge', 'you cannot pay with a note you issued yourself', 400);
     if (A.id === C.id) throw new PilotError('pay_with_is_payee', `${C.handle} issued this note itself: paying it with its own note would be a set-off, not a transfer`, 400);
+    if (this.namedIssuer(d) && this.namedIssuer(d).id !== A.id) throw this.issuerRefused(d, A);
     if (B.status !== 'active' || !B.pubkey) throw new PilotError('no_key', 'the payer has no registered agent key', 409);
     if (C.status !== 'active' || !C.pubkey) throw new PilotError('payee_no_key', `${C.handle} has no registered agent key right now (its owner revoked it); it cannot be paid by transfer`, 409);
     this.sandboxScope(A, C);
@@ -3307,8 +3382,8 @@ export class Pilot {
     const code = e => { if (e instanceof PilotError) return e.extra?.rule ? `${e.code}:${e.extra.rule}` : e.code; throw e; };
     let payerWhy = null;
     try { this.spendingPayerCheck(B, d); } catch (e) { payerWhy = code(e); }
-    const ownBlock = await this.paymentBlock(d, {route: 'note'});
-    let own = {available: !ownBlock, why_not: ownBlock?.code ?? null};
+    const ownBlock = await this.paymentBlock(d, {route: 'note'}), named = this.namedIssuer(d);
+    let own = named ? {available: false, why_not: 'terms_name_payment_issuer'} : {available: !ownBlock, why_not: ownBlock?.code ?? null};
     if (own.available) {
       try { const {issuer, recipient} = this.noteParties(d); this.assertPairFree(d, issuer, recipient); this.assertNoteEdgeFree(issuer, recipient); }
       catch (e) { own = {available: false, why_not: code(e)}; }
@@ -3324,6 +3399,7 @@ export class Pilot {
       if (A.id !== C.id && C.pubkey) { try { await this.receivingTransferCheck(C, A, price, {ledger, dealId: d.id}); payeeAccepts = true; } catch (e) { code(e); } }
       let why = null;
       if (A.id === C.id) why = 'pay_with_is_payee';
+      else if (named && named.id !== A.id) why = 'payment_issuer_mismatch';
       else if (A.pubkey !== l.issuer_pubkey || A.status !== 'active') why = 'frozen_key';
       else if (!C.pubkey || C.status !== 'active') why = 'payee_no_key';
       else if (this.mode === 'sandbox' && !(this.inSandbox(A) && this.inSandbox(C))) why = 'sandbox_only';
@@ -3343,7 +3419,8 @@ export class Pilot {
         spendable, enough: spendable >= price, payee_accepts: payeeAccepts, issuer_consents: this.consentSpeed(A, 'issuer'), payee_consents: this.consentSpeed(C, 'creditor'), why_not: why});
     }
     const open = this.transfersOf(d).filter(t => !LIVE_TRANSFER.has(t.state) && t.state !== 'applied' && this.now() <= t.fallback_after).at(-1) ?? null;
-    return {deal_id: d.id, price, payee: {id: C.id, handle: C.handle, pubkey: C.pubkey}, own_note: own, held_notes: held,
+    // Terms that name a payment issuer (fix inbox #192/#196): only its note pays this deal; payment_issuer names it.
+    return {deal_id: d.id, price, payee: {id: C.id, handle: C.handle, pubkey: C.pubkey}, ...(named ? {payment_issuer: {id: named.id, handle: named.handle}} : {}), own_note: own, held_notes: held,
       pending_transfer: open && {id: open.id, state: open.state, issuer: {id: open.issuer.id, handle: this.s.participants[open.issuer.id]?.handle ?? null}, timestamp: open.timestamp, fallback_after: iso(open.fallback_after)},
       fallback_after: ownBlock?.retry_after_ms ? iso(this.now() + ownBlock.retry_after_ms) : null};
   }
@@ -4835,9 +4912,13 @@ export class Pilot {
     // next_actions of 10.4 and the labels of 16.1. In modes off and bound the view is v15's, byte for byte.
     const circulating = this.circulating, t = circulating ? this.paymentTransfer(d) : null;
     const price = d.agreement?.terms.price.amount, handle = id => this.s.participants[id]?.handle ?? id;
+    // The payment issuer the terms shown name (payment_issuer; fix inbox #192/#196), in words; absent for terms without one.
+    const pi = seen(cur) ? cur.terms.payment_issuer : null;
     return {
       id: d.id, status: d.status, overdue, you: p.id, your_role: my('payer') ? 'payer' : 'payee',
       counterparty: this.publicParticipant(this.s.participants[other]), next_actions: this.nextActions(d, p, gate),
+      ...(pi ? {payment_issuer: {id: pi.id, handle: handle(pi.id), pubkey: pi.pubkey,
+        words: `${handle(d.payer)} will pay by passing ${handle(d.payee)} a note issued by ${handle(pi.id)} (${pi.id}), not a note of its own; these terms are paid no other way`}} : {}),
       current: seen(cur) ? {version: cur.v, by: cur.by, state: cur.state, terms: cur.terms, terms_hash: cur.terms_hash, signature: cur.signature, offered_at: cur.offered_at} : null,
       pending_counter: pending && {version: pending.v, state: pending.state, terms: pending.terms, terms_hash: pending.terms_hash, signature: pending.signature, created_at: pending.created_at},
       versions: versions.map(v => ({version: v.v, by: v.by, state: v.state, terms_hash: v.terms_hash, price: v.terms.price, signature: v.signature, created_at: v.created_at, offered_at: v.offered_at})),
@@ -5033,7 +5114,8 @@ export class Pilot {
         // An attempt that applied, or whose outcome only the payer's owner can decide: nothing to do (every payment route
         // refuses: already_paid, attempt_outcome_unknown).
         if (g.note?.code === 'already_paid' || g.note?.code === 'attempt_outcome_unknown') return [];
-        const out = [g.note ? 'wait_for_transfer_window' : 'complete'];
+        // Terms that name a payment issuer are paid only by transfer of its note: never 'complete' (terms_name_payment_issuer).
+        const out = this.namedIssuer(d) ? [] : [g.note ? 'wait_for_transfer_window' : 'complete'];
         // Never an action the route refuses (decision D-1): pay_by_transfer only when a transfer through some held note
         // passes paymentBlock (g.transfer null), a wait while the routes answer transfer_window_open (or edge_busy), and
         // nothing while they refuse it for good for now (pending_unbound_note: an earlier ordinary note of the payer's
@@ -5399,7 +5481,8 @@ export class Pilot {
   inbox(p) {
     const deals = this.dealsFor(p).map(d => this.sweep(d));
     const brief = d => { const c = this.current(d); return {deal_id: d.id, status: d.status, counterparty: this.s.participants[d.payer === p.id ? d.payee : d.payer].handle,
-      your_role: d.payer === p.id ? 'payer' : 'payee', title: c.terms.service.title, price: c.terms.price, version: c.v, offer_expires_at: c.terms.offer_expires_at, deliver_by: c.terms.deliver_by}; };
+      your_role: d.payer === p.id ? 'payer' : 'payee', title: c.terms.service.title, price: c.terms.price, version: c.v, offer_expires_at: c.terms.offer_expires_at, deliver_by: c.terms.deliver_by,
+      ...(c.terms.payment_issuer ? {payment_issuer: {id: c.terms.payment_issuer.id, handle: this.s.participants[c.terms.payment_issuer.id]?.handle ?? null}} : {})}; };
     const cur = d => this.current(d), other = d => d.payer === p.id ? d.payee : d.payer;
     const pendingFor = (d, id) => Object.values(this.s.approvals).some(a => a.deal_id === d.id && a.participant === id && a.state === 'pending');
     // Each deal is listed in at most one section: STATUS_CLASS[status].payer_inbox / payee_inbox (lib/pilot/status.mjs).
