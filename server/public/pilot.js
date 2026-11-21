@@ -876,6 +876,8 @@ function termsKv(t, meId, extra = [], endsAt = null) {
     ['Consideration', t.consideration === 'credit_note_on_delivery_accepted' ? 'a note from the payer when it accepts the delivery: outstanding, not a settlement (consideration: credit_note_on_delivery_accepted)'
       : t.payment === 'on_delivery_accepted' ? 'a note from the payer when it accepts the delivery (payment: on_delivery_accepted)'
       : String(t.consideration ?? t.payment ?? '–')],
+    // Terms that name a payment issuer (fix inbox #192/#196): the payer pays only by passing on that issuer's note.
+    ...(t.payment_issuer ? [['Payment issuer', [`the payer pays only by passing the payee a note issued by ${handleOf(t.payment_issuer.id)}, not a note of its own `, keyFp(t.payment_issuer.pubkey)]]] : []),
     ['Deliver by', whenRel(t.deliver_by)],
     ['Offer expires at', expiry],
     ['Deal, version', `${t.deal_id} · version ${t.version}${t.prior_terms_hash ? ` · replaces ${short(t.prior_terms_hash)}` : ''}`],

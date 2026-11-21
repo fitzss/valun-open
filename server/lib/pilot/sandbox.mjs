@@ -97,8 +97,10 @@ const PER_TICK = 8, MAX_ATTEMPTS_PER_TICK = 32, BACKOFF_BASE_MS = 10e3, BACKOFF_
 // (circulating credit only; with it off every action does something or fails).
 const NOTHING = Symbol('nothing to do');
 // Refusals from Pilot.accept that trying again does not change: the agent declines the offer, with a signed reason.
-const PERMANENT_REFUSALS = new Set(['mandate_exceeded', 'offer_not_authorized', 'acceptance_not_authorized']);
-const refusalReason = e => e.code === 'offer_not_authorized'
+const PERMANENT_REFUSALS = new Set(['mandate_exceeded', 'offer_not_authorized', 'acceptance_not_authorized', 'payment_issuer_not_accepted']);
+const refusalReason = e => e.code === 'payment_issuer_not_accepted'
+  ? `I cannot accept this offer: my policy does not take the payment issuer it names${typeof e.extra?.rule === 'string' ? ` (${e.extra.rule})` : ''}. Offer again without payment_issuer, or name an issuer I take.`
+  : e.code === 'offer_not_authorized'
   ? 'I cannot accept this offer: the server says it is no longer within your mandate (your owner changed your limits, or other commitments used them up). Make a new offer once it is.'
   : `I cannot accept this offer: accepting it would exceed my own mandate${typeof e.extra?.rule === 'string' ? ` (${e.extra.rule})` : ''}. Offer less, or try again later.`;
 // Guarantees (fix inbox #84): the agent that answers offers naming it as the creditor, how many it accepts from one
@@ -433,6 +435,8 @@ export class Sandbox {
   async buy(handle, x, d, cur, decline) {
     const p = this.pilot, t = cur.terms, price = t.price.amount, other = d.payee;
     if (this.dealsToday(x, other) > PER_COUNTERPARTY_PER_DAY) return decline(`Limit reached: at most ${PER_COUNTERPARTY_PER_DAY} deals per counterparty per day. Try again tomorrow.`);
+    // A sandbox agent pays with its own note only: terms that name a payment issuer (fix inbox #192) it declines.
+    if (t.payment_issuer) return decline('I pay only with my own note; offer again without naming a payment issuer (payment_issuer).');
     const service = whichService(t);
     if (!service) return decline('I buy only text-stats and notary jobs, whose results I can check exactly (text-stats at most ${amt(pc(3))}, notary at most ${amt(pc(2))}; the text in a ``` block in the description).');
     const list = SERVICES[service].price;

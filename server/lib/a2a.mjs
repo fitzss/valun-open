@@ -26,7 +26,7 @@ import {A2A_PER_MINUTE, BODY_MAX_BYTES} from './pilot/limits.mjs';
 // terminal; fix inbox #174); up to plugin 0.7.2 it printed the token on stdout when its file existed or could not be
 // written (3b08008 _hand_over), and the Hermes catalog's entry pins 0.6.2 (ac6e4b3) on Nov 19. The testnet's join text
 // says so by version; localJoin keeps the local image's words.
-export const CLIENT = 'valun==0.7.3';
+export const CLIENT = 'valun==0.7.4';
 const RUN = `uvx --from ${CLIENT} valun`;
 // A local server's agent docs (public/skill-local.md, llms-local.txt and start-local.html, rendered by
 // scripts/build-local-docs.mjs), its A2A answer and its MCP hint pin the client release the local image is checked
@@ -403,7 +403,7 @@ function answer(pilot, origin, intent, text) {
       + `${data.mcp[1]}. These two lines have run end to end once (Claude Code 2.1.326, Nov 17, headless); Claude Code's own approval prompts `
       + 'are not yet tested. claude mcp add adds the server only for the folder it runs in (Claude Code\'s default scope, local); '
       + `claude mcp add --scope user valun -- ${RUN} mcp adds it for every folder. `
-      + 'A --sandbox join of valun 0.7.3 without --approvals asks whether a person will approve, and sends nothing with no terminal. Write --approvals ask in its place only if your human chose '
+      + 'A --sandbox join of valun 0.7.4 without --approvals asks whether a person will approve, and sends nothing with no terminal. Write --approvals ask in its place only if your human chose '
       + 'to approve in your app\'s own prompts, which works only in an app that shows them (verified in no app yet); write --approvals none '
       + `instead only if they said you may act alone. There is also a plugin (${data.claude_code[0]}, then ${data.claude_code[1]}): an install check only, not yet run end `
       + 'to end.\n'

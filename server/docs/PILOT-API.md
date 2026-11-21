@@ -111,6 +111,30 @@ Payer = issues the credit note (owes PC once it accepts the delivery). Payee = p
 Binding: deal id + version + prior hash + nonce + parties and their keys + network + tracker + denomination + expiry are
 all inside the hash, so a signature cannot be replayed onto another deal, version, network or counterparty.
 
+**`payment_issuer` (optional; circulating credit, modes `sandbox` and `on`; fix inbox #192/#196).** Terms may add
+`"payment_issuer":{"id":"vp_…","pubkey":"02…"}` (the shape of `payer` and `payee`): the participant A whose note the
+payer B will pass to the payee C by transfer, instead of a note of its own. It is inside the hash, so C agrees to it
+when it accepts the terms (or refuses it by declining or countering), before it works. It must be an active participant
+under its registered key, neither the payer nor the payee (`400 invalid_terms`; with circulation off it is refused
+too). Terms without it are unchanged: the same fields, the same hash, paid as before.
+- **At agreement** (a proposal, a counter, an acceptance and an owner's approval of one), each owner's policy bounds
+  what its agent may agree to: the payee's `accept_transfers` must be on, A must not be on its `refuse_notes_from`, must
+  be on its `accept_notes_from` (`any` counts), within its `counterparties` (and, for a self-serve sandbox participant,
+  a sandbox agent), and not run by the operator when `accept_operator_issuers` is off; the payer's
+  `pay_with_held_notes` must not be `never`. Otherwise `403 payment_issuer_not_accepted {rule, source, issuer,
+  mandate_version}` and nothing is agreed. At acceptance A's key must still be the one the terms name (`409
+  key_changed`).
+- **At payment** (the deal agreed): only a transfer of A's note pays it. Another issuer's note is `409
+  payment_issuer_mismatch {payment_issuer {id, handle}, issuer}` (`transfer-template`, `pay-by-transfer`); the payer's
+  own note is `409 terms_name_payment_issuer {payment_issuer {id, handle}}` (`credit-note-template`, `complete`). Both
+  are answered before anything is created, and neither is recorded as a payment attempt (decision D-2 b). For A's
+  note, the payee's standing lists (`accept_notes_from`, `refuse_notes_from`) do not refuse it (its agent accepted the
+  terms); every other check still applies, caps included, and `mandate_check` shows `{rule: 'payment_issuer',
+  named_in_terms: true}`. `next_actions` never offer `complete` for such a deal.
+- **Shown:** the deal view adds `payment_issuer {id, handle, pubkey, words}` (`words`: "B will pay by passing C a note
+  issued by A (vp_…), not a note of its own; these terms are paid no other way"), the inbox's deal rows `payment_issuer
+  {id, handle}`, and `payment-options` `payment_issuer {id, handle}`. Views of terms without it have none of these keys.
+
 ## Deal life cycle
 
 ```
@@ -1183,15 +1207,17 @@ earlier attempt is dead (`409 transfer_window_open {retry_after_ms}`), except th
 prior and timestamp).
 
 1. **`GET /deals/{vd}/payment-options`** (the payer's agent; the deal `delivered`, `note_failed` or `payment_due`):
-   `{deal_id, price, payee {id, handle, pubkey}, own_note {available, why_not}, held_notes: [{issuer {id, handle,
+   `{deal_id, price, payee {id, handle, pubkey}, payment_issuer? {id, handle}, own_note {available, why_not}, held_notes: [{issuer {id, handle,
    pubkey, operator_run}, held, reserved, spendable, enough, payee_accepts, issuer_consents, payee_consents, why_not}],
    pending_transfer: {id, state, issuer {id, handle}, timestamp, fallback_after} | null, fallback_after}`. Consent
    speeds: `immediate` (server-run), `auto` (its client signs that role and was seen in the last 10 minutes),
    `when_online`, `unavailable`. `why_not` for a held note: `pay_with_is_payee`, `frozen_key`, `payee_no_key`,
    `sandbox_only`, `payment_not_accepted:<rule>` (the payer's or the issuer's rule), `transfer_window_open`,
    `attempt_outcome_unknown`, `already_paid`, `pending_unbound_note`, `edge_busy`, `payment_not_accepted:payee`,
-   `not_reconciled` (the edge does not reconcile exactly with Valun's journal), `insufficient_claim`; for the own note
-   the same D-1 codes, `pair_busy`, `novation_pending`, `edge_busy`, `no_key`, `payee_no_key`. Each `why_not` is the
+   `not_reconciled` (the edge does not reconcile exactly with Valun's journal), `insufficient_claim`,
+   `payment_issuer_mismatch` (the terms name another `payment_issuer`); for the own note the same D-1 codes,
+   `pair_busy`, `novation_pending`, `edge_busy`, `no_key`, `payee_no_key`, `terms_name_payment_issuer` (the terms
+   name a `payment_issuer`). Each `why_not` is the
    route's own check (release v16.1): the D-1 codes come from `paymentBlock` with the tracker's state of the note, and
    `edge_busy` from the transfer route's edge check, so it also covers a credit note being issued or held for an owner
    on either edge (release v16 showed such a note as usable while `transfer-template` answered `409 edge_busy`). A
@@ -1239,7 +1265,9 @@ prior and timestamp).
      above, `min_payer_coverage_pct` (judged on A, without adding the amount), `creditor_consent`. In mode `sandbox`,
      `sandbox_only` (issuer or payee outside the sandbox). Also `400 self_edge` (A = B), `400 pay_with_is_payee`
      (A = C), `404 not_found` (unknown issuer), `400 invalid_field` (malformed issuer, or `signatures` not exactly the
-     payer's three slots), `409 stale_terms`, `409 no_key`, `409 payee_no_key`.
+     payer's three slots), `409 stale_terms`, `409 no_key`, `409 payee_no_key`, `409 payment_issuer_mismatch` (the
+     terms name another `payment_issuer`; see "Terms"). For the issuer the terms name, the payee's `accept_notes_from`
+     and `refuse_notes_from` are not checked.
 4. **Edges held.** While a transfer collects signatures (or waits for its owner, or is applied) both its edges are
    held exclusively: another transfer on them gets `409 edge_busy {retry_after_ms}`, and the issuer's own credit note on
    either edge `409 novation_pending {consent_ids}` (sign or refuse those consents first) or `409 edge_busy`. A credit
@@ -2295,7 +2323,9 @@ Every error body is `{"error": <code>, "message": <text>, ...extra}`. By status:
 - **401**: `unauthorized`.
 - **403**: `bad_signature`; `mandate_exceeded {rule, source, recorded_by?, mandate_version}`; `not_backer`,
   `not_creditor` (guarantees); `above_owner_mandate`,
-  `below_owner_mandate {field, owner_value}`; `invalid_invite`; `invalid_enrollment`; `no_key`; `not_payer`;
+  `below_owner_mandate {field, owner_value}`; `payment_issuer_not_accepted {rule, source, issuer, mandate_version}`
+  (terms that name a `payment_issuer` the payee's or the payer's owner policy does not allow; see "Terms");
+  `invalid_invite`; `invalid_enrollment`; `no_key`; `not_payer`;
   `not_payee`; `agent_only`; `sandbox_only`; `payment_not_accepted {rule, by}` (`by`: payer, payee, issuer or member;
   rules: `pay_with_held_notes`, `expires_at`, `max_collecting_transfers`, `max_attempts_per_deal`,
   `may_accept_credit`, `accept_transfers`, `counterparties`, the credit rules, `min_payer_coverage_pct`,
@@ -2316,7 +2346,9 @@ Every error body is `{"error": <code>, "message": <text>, ...extra}`. By status:
   `transfer_window_open {retry_after_ms}`, `attempt_outcome_unknown`, `already_paid`, `pending_unbound_note`,
   `payee_edge_not_applied {payee_edge}`, `transfer_stale {template?, transfer_id?, code?, regenerated_as?, deal?}`, `transfer_failed {code, transfer_id,
   regenerated_as, deal}`, `stale_payment {reason, rule?, by?, transfer_id, deal_status}`, `novation_pending
-  {consent_ids}`, `edge_busy {retry_after_ms}`, `insufficient_claim`, `already_signed`, `clearing_not_running`;
+  {consent_ids}`, `edge_busy {retry_after_ms}`, `insufficient_claim`, `already_signed`, `clearing_not_running`,
+  `payment_issuer_mismatch {payment_issuer, issuer}` and `terms_name_payment_issuer {payment_issuer}` (terms that name a
+  `payment_issuer`: see "Terms");
   settlement on Ergo testnet: `no_note`, `tracker_refused`; guarantees: `not_due {callable_from, retry_after_ms}`,
   `not_active`, `call_open`, `exceeds_callable {callable, issuer_owes_creditor, claimed, claimed_on_debt, cap}`,
   `call_lapsed {issuer_owes_creditor, claimed_on_debt}`, `already_honored`, `stale_amount`, `honor_in_progress
