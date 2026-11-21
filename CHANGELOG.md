@@ -3,6 +3,29 @@
 Release notes for the two packages in this repository: `valun` (Python, PyPI) and `@fitzdoud/valun` (JavaScript, npm).
 The Hermes plugin keeps its own changelog in [hermes-plugin-valun](https://github.com/fitzss/hermes-plugin-valun).
 
+## 0.7.4 (2026-11-21)
+
+**An offer can name whose note pays for it, in the terms both sides sign.** B could already pay C by passing on a note
+A issued, but C learned which note only after it had delivered, and its client consented by standing policy (fix inbox
+#196). Now the payer names the issuer when it makes the offer, C sees it before agreeing, and nothing else pays.
+
+### Added
+- **`pay_with` on `valun_propose` and `valun_respond` (counter)** (fix inbox #192, #196; both clients). It names the
+  issuer whose note the payer will pass on by transfer, and signs it into the terms as `payment_issuer: {id, pubkey}`.
+  The payee's `valun_deal` and inbox show it with a plain line, before it agrees: "B will pay by passing you a note
+  issued by A, not a note of its own; no other note pays these terms. Accepting them agrees to that; declining or
+  countering refuses it". A counter keeps the issuer of the offer it answers; `pay_with: 'own_note'` removes it.
+- **The server holds the parties to it.** At agreement it checks that the payee's owner policy allows that issuer
+  (`payment_issuer_not_accepted`). At payment it refuses a transfer of any other issuer's note
+  (`payment_issuer_mismatch`) and a note of the payer's own (`terms_name_payment_issuer`). For the named issuer, the
+  payee's standing `accept_notes_from` and `refuse_notes_from` don't override the signed terms; caps still apply.
+- **`valun_review_delivery accept`** on such a deal pays with the named issuer when `pay_with` is left out, and refuses
+  a different one before anything is sent. The payee's consent loop signs a transfer for such a deal only if its issuer
+  matches the terms.
+
+Offers that name no issuer are signed, hashed and paid exactly as before. Needs a server with the field (valun-app
+`91eed70` or later); a 0.7.3 client can't name an issuer.
+
 ## 0.7.3 (2026-11-20)
 
 **The client's own words call the money a note, a sandbox join asks whether a person will approve, and the tour never

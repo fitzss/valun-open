@@ -1,6 +1,6 @@
 {
   "name": "@fitzdoud/valun",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "description": "Zero-dependency JavaScript/TypeScript client for Valun on Ergo testnet: signed notes, circulating credit, guarantees and reserve redemption. Local keys and checks before signing. Test coins only, no monetary value.",
   "license": "MIT",
   "author": "Fitz Doud",

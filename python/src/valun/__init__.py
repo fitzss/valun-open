@@ -8,4 +8,4 @@ cleared in a loop of notes (a set-off: the netting is committed, not final), or 
 tERG reserve locked under the key that signed it, if one was posted. The earlier pilot network
 (valun-pilot-1, synthetic units) was retired on 2026-11-13.
 """
-__version__ = '0.7.3'
+__version__ = '0.7.4'
